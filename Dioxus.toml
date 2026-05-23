@@ -3,5 +3,6 @@ name = "timecard-calc"
 default_platform = "desktop"
 out_dir = "dist"
 asset_dir = "packages/ui/assets"
+package = "desktop"
 
 [desktop]
