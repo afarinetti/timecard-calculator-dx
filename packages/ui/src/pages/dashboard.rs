@@ -48,6 +48,19 @@ pub fn Dashboard() -> Element {
         });
     };
 
+    // Derive stat values before rsx! so borrows drop
+    let today_hrs = day_data.read().as_ref()
+        .and_then(|r| r.as_ref().ok())
+        .map(|s| s.total_hours);
+    let week_hrs = week_data.read().as_ref()
+        .and_then(|r| r.as_ref().ok())
+        .map(|s| s.total_hours);
+
+    let open_add_entry = move |_| {
+        *editing_entry.write() = None;
+        *show_form.write() = true;
+    };
+
     rsx! {
         div { class: "space-y-4",
 
@@ -63,21 +76,54 @@ pub fn Dashboard() -> Element {
                 }
             }
 
-            // Navigation + Add button
-            div { class: "flex items-center justify-between flex-wrap gap-2",
-                div { class: "flex items-center gap-1",
+            // Stats cards
+            div { class: "grid grid-cols-3 gap-3",
+                // Today card
+                div { class: "bg-[#161b22] border border-[#21262d] rounded-lg px-4 py-3.5",
+                    p { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] mb-1.5", "Today" }
+                    if let Some(h) = today_hrs {
+                        p { class: "pd-stat-value",
+                            "{h:.1}"
+                            span { class: "text-[13px] text-[#8b949e] font-normal ml-0.5", "h" }
+                        }
+                    } else {
+                        p { class: "pd-stat-value text-[#8b949e]", "—" }
+                    }
+                }
+                // This Week card
+                div { class: "bg-[#161b22] border border-[#21262d] rounded-lg px-4 py-3.5",
+                    p { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] mb-1.5", "This Week" }
+                    if let Some(h) = week_hrs {
+                        p { class: "pd-stat-value",
+                            "{h:.1}"
+                            span { class: "text-[13px] text-[#8b949e] font-normal ml-0.5", "h" }
+                        }
+                    } else {
+                        p { class: "pd-stat-value text-[#8b949e]", "—" }
+                    }
+                }
+                // Pay Period card (stub — no API yet)
+                div { class: "bg-[#161b22] border border-[#21262d] rounded-lg px-4 py-3.5",
+                    p { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] mb-1.5", "Pay Period" }
+                    p { class: "pd-stat-value-ok", "—" }
+                }
+            }
+
+            // Date nav row
+            div { class: "flex items-center justify-between",
+                div { class: "flex items-center gap-2",
                     if *tab.read() == DashTab::Day {
                         button {
-                            class: "btn btn-sm btn-ghost",
+                            class: "border border-[#30363d] text-[#8b949e] hover:border-[#58a6ff] hover:text-[#58a6ff] px-2.5 py-1 rounded-[5px] text-sm leading-none transition-colors",
                             onclick: move |_| {
                                 let d = current_date.read().clone();
                                 *current_date.write() = navigate_date(&d, -1);
                             },
                             "‹"
                         }
-                        span { class: "text-sm font-semibold px-1", "{current_date}" }
+                        span { class: "text-sm font-semibold text-[#e6edf3] min-w-[120px] text-center", "{current_date}" }
                         button {
-                            class: "btn btn-sm btn-ghost",
+                            class: "border border-[#30363d] text-[#8b949e] hover:border-[#58a6ff] hover:text-[#58a6ff] px-2.5 py-1 rounded-[5px] text-sm leading-none transition-colors",
                             onclick: move |_| {
                                 let d = current_date.read().clone();
                                 *current_date.write() = navigate_date(&d, 1);
@@ -85,23 +131,23 @@ pub fn Dashboard() -> Element {
                             "›"
                         }
                         button {
-                            class: "btn btn-xs btn-outline ml-2",
+                            class: "text-xs text-[#8b949e] px-2 py-1 border border-[#30363d] rounded-[4px] hover:border-[#58a6ff] hover:text-[#58a6ff] transition-colors",
                             onclick: move |_| *current_date.write() = today(),
                             "Today"
                         }
                     }
                     if *tab.read() == DashTab::Week {
                         button {
-                            class: "btn btn-sm btn-ghost",
+                            class: "border border-[#30363d] text-[#8b949e] hover:border-[#58a6ff] hover:text-[#58a6ff] px-2.5 py-1 rounded-[5px] text-sm leading-none transition-colors",
                             onclick: move |_| {
                                 let w = current_week.read().clone();
                                 *current_week.write() = navigate_week(&w, -1);
                             },
                             "‹"
                         }
-                        span { class: "text-sm font-semibold px-1", "Week of {current_week}" }
+                        span { class: "text-sm font-semibold text-[#e6edf3] min-w-[120px] text-center", "Week of {current_week}" }
                         button {
-                            class: "btn btn-sm btn-ghost",
+                            class: "border border-[#30363d] text-[#8b949e] hover:border-[#58a6ff] hover:text-[#58a6ff] px-2.5 py-1 rounded-[5px] text-sm leading-none transition-colors",
                             onclick: move |_| {
                                 let w = current_week.read().clone();
                                 *current_week.write() = navigate_week(&w, 1);
@@ -112,35 +158,33 @@ pub fn Dashboard() -> Element {
                 }
                 button {
                     class: "btn btn-primary btn-sm",
-                    onclick: move |_| {
-                        *editing_entry.write() = None;
-                        *show_form.write() = true;
-                    },
+                    onclick: open_add_entry,
                     "+ Add Entry"
                 }
             }
 
-            // Tab bar — use_signal drives tab-active, not DaisyUI checkbox trick
-            div { class: "tabs tabs-lifted",
-                button {
-                    class: if *tab.read() == DashTab::Day { "tab tab-active" } else { "tab" },
-                    onclick: move |_| *tab.write() = DashTab::Day,
-                    "Day"
-                }
-                button {
-                    class: if *tab.read() == DashTab::Week { "tab tab-active" } else { "tab" },
-                    onclick: move |_| *tab.write() = DashTab::Week,
-                    "Week"
-                }
-                button {
-                    class: if *tab.read() == DashTab::PayPeriod { "tab tab-active" } else { "tab" },
-                    onclick: move |_| *tab.write() = DashTab::PayPeriod,
-                    "Pay Period"
-                }
-                button {
-                    class: if *tab.read() == DashTab::History { "tab tab-active" } else { "tab" },
-                    onclick: move |_| *tab.write() = DashTab::History,
-                    "History"
+            // Tab bar — underline style
+            div { class: "flex border-b border-[#21262d]",
+                for (label, this_tab) in [
+                    ("Day", DashTab::Day),
+                    ("Week", DashTab::Week),
+                    ("Pay Period", DashTab::PayPeriod),
+                    ("History", DashTab::History),
+                ] {
+                    {
+                        let is_active = *tab.read() == this_tab;
+                        rsx! {
+                            button {
+                                class: if is_active {
+                                    "text-sm font-medium text-[#58a6ff] px-4 py-2 border-b-2 border-[#58a6ff] -mb-px transition-colors"
+                                } else {
+                                    "text-sm font-medium text-[#8b949e] hover:text-[#e6edf3] px-4 py-2 border-b-2 border-transparent -mb-px transition-colors"
+                                },
+                                onclick: move |_| *tab.write() = this_tab.clone(),
+                                "{label}"
+                            }
+                        }
+                    }
                 }
             }
 
@@ -148,8 +192,14 @@ pub fn Dashboard() -> Element {
             match *tab.read() {
                 DashTab::Day => rsx! {
                     match day_data.read().as_ref() {
-                        None => rsx! { div { class: "flex justify-center py-8", span { class: "loading loading-spinner" } } },
-                        Some(Err(e)) => rsx! { div { class: "alert alert-error", "{e}" } },
+                        None => rsx! {
+                            div { class: "flex justify-center py-8",
+                                span { class: "loading loading-spinner" }
+                            }
+                        },
+                        Some(Err(e)) => rsx! {
+                            div { class: "alert alert-error", "{e}" }
+                        },
                         Some(Ok(summary)) => rsx! {
                             EntryTable {
                                 entries: summary.entries.clone(),
@@ -159,16 +209,25 @@ pub fn Dashboard() -> Element {
                                 },
                                 on_delete: handle_delete,
                             }
-                            div { class: "flex justify-end mt-2 text-sm font-semibold",
-                                "Total: {summary.total_hours:.2} hrs"
+                            div { class: "flex justify-end mt-2 text-xs text-[#8b949e]",
+                                "Total: "
+                                span { class: "text-[#e6edf3] font-mono font-bold ml-1",
+                                    "{summary.total_hours:.2} hrs"
+                                }
                             }
                         },
                     }
                 },
                 DashTab::Week => rsx! {
                     match week_data.read().as_ref() {
-                        None => rsx! { div { class: "flex justify-center py-8", span { class: "loading loading-spinner" } } },
-                        Some(Err(e)) => rsx! { div { class: "alert alert-error", "{e}" } },
+                        None => rsx! {
+                            div { class: "flex justify-center py-8",
+                                span { class: "loading loading-spinner" }
+                            }
+                        },
+                        Some(Err(e)) => rsx! {
+                            div { class: "alert alert-error", "{e}" }
+                        },
                         Some(Ok(summary)) => rsx! {
                             EntryTable {
                                 entries: summary.entries.clone(),
@@ -178,30 +237,28 @@ pub fn Dashboard() -> Element {
                                 },
                                 on_delete: handle_delete,
                             }
-                            div { class: "flex flex-wrap gap-4 justify-between mt-2 text-sm",
-                                div { class: "flex gap-3 text-base-content/60",
-                                    for day in summary.by_day.iter() {
-                                        span { "{day.date}: {day.total_hours:.2}h" }
-                                    }
+                            div { class: "flex justify-end mt-2 text-xs text-[#8b949e]",
+                                "Total: "
+                                span { class: "text-[#e6edf3] font-mono font-bold ml-1",
+                                    "{summary.total_hours:.2} hrs"
                                 }
-                                span { class: "font-semibold", "Total: {summary.total_hours:.2} hrs" }
                             }
                         },
                     }
                 },
                 DashTab::PayPeriod => rsx! {
-                    div { class: "text-base-content/50 py-10 text-center text-sm",
+                    div { class: "text-[#8b949e] py-10 text-center text-sm",
                         "Configure pay period anchors in Settings to enable this view."
                     }
                 },
                 DashTab::History => rsx! {
-                    div { class: "text-base-content/50 py-10 text-center text-sm",
+                    div { class: "text-[#8b949e] py-10 text-center text-sm",
                         "Select a pay period to view historical entries."
                     }
                 },
             }
 
-            // Entry form modal
+            // Entry form modal — always in RSX, show controls visibility
             EntryFormModal {
                 show: *show_form.read(),
                 editing: editing_entry.read().clone(),
