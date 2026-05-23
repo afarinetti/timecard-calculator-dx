@@ -3,7 +3,7 @@ use api::{
     CreateTimecardEntry, LaborCode, HourType, Repository,
     TimecardEntryView, UpdateTimecardEntry,
 };
-use crate::utils::utc_to_central_hhmm;
+use crate::utils::{utc_to_central_hhmm, start_now_hhmm, end_now_hhmm};
 
 #[derive(Clone, PartialEq)]
 enum EntryMode { TimeInputs, Duration }
@@ -28,7 +28,7 @@ pub fn EntryFormModal(
     let mut duration      = use_signal(|| 8.0f64);
     let mut error         = use_signal(|| Option::<String>::None);
 
-    // Populate fields when the modal opens or the editing target changes
+    // Populate fields when the drawer opens or the editing target changes
     let editing_for_effect = editing.clone();
     use_effect(move || {
         if let Some(ref e) = editing_for_effect {
@@ -49,6 +49,11 @@ pub fn EntryFormModal(
         *mode.write()  = EntryMode::TimeInputs;
         *error.write() = None;
     });
+
+    // All hooks above; early return below is safe
+    if !show {
+        return rsx! { div {} };
+    }
 
     let end_from_duration = move |start: &str, dur: f64| -> Option<String> {
         let (h, m): (u32, u32) = {
@@ -112,66 +117,160 @@ pub fn EntryFormModal(
         });
     };
 
+    let is_editing = editing.is_some();
+
     rsx! {
-        dialog {
-            class: if show { "modal modal-open" } else { "modal" },
-            div { class: "modal-box w-full max-w-lg",
-                h3 { class: "font-bold text-lg mb-4",
-                    if editing.is_some() { "Edit Entry" } else { "New Entry" }
-                }
+        div { class: "fixed inset-0 z-50 flex",
+            // Dim backdrop — click closes drawer
+            div {
+                class: "flex-1 bg-black/35",
+                onclick: move |_| on_close.call(()),
+            }
 
-                // Mode toggle — use_signal, not DaisyUI checkbox trick
-                div { class: "join mb-4",
-                    button {
-                        class: if *mode.read() == EntryMode::TimeInputs { "btn btn-sm join-item btn-active" } else { "btn btn-sm join-item" },
-                        onclick: move |_| *mode.write() = EntryMode::TimeInputs,
-                        "Time Inputs"
+            // Drawer panel
+            div { class: "w-80 bg-[#161b22] border-l border-[#30363d] flex flex-col",
+                // ── Header ──────────────────────────────────────────────
+                div { class: "flex-shrink-0 flex items-center justify-between px-5 py-4 border-b border-[#30363d]",
+                    span { class: "text-sm font-semibold text-[#e6edf3]",
+                        if is_editing { "Edit Entry" } else { "New Entry" }
                     }
                     button {
-                        class: if *mode.read() == EntryMode::Duration { "btn btn-sm join-item btn-active" } else { "btn btn-sm join-item" },
-                        onclick: move |_| *mode.write() = EntryMode::Duration,
-                        "Duration"
+                        r#type: "button",
+                        class: "btn btn-ghost btn-xs btn-square",
+                        onclick: move |_| on_close.call(()),
+                        "×"
                     }
                 }
 
-                // Labor Code
-                div { class: "form-control mb-3",
-                    label { class: "label", span { class: "label-text", "Labor Code" } }
-                    select {
-                        class: "select select-bordered w-full",
-                        value: "{labor_code_id}",
-                        onchange: move |e| *labor_code_id.write() = e.value(),
-                        option { value: "", disabled: true,
-                            selected: labor_code_id.read().is_empty(),
-                            "Select labor code"
+                // ── Body ────────────────────────────────────────────────
+                div { class: "flex-1 overflow-y-auto px-5 py-[18px] flex flex-col gap-4",
+
+                    // Mode toggle (segmented control)
+                    div { class: "bg-[#0d1117] border border-[#30363d] rounded-[6px] overflow-hidden flex",
+                        button {
+                            r#type: "button",
+                            class: if *mode.read() == EntryMode::TimeInputs {
+                                "flex-1 btn btn-xs btn-primary rounded-none border-0"
+                            } else {
+                                "flex-1 btn btn-xs btn-ghost rounded-none border-0 text-[#8b949e]"
+                            },
+                            onclick: move |_| *mode.write() = EntryMode::TimeInputs,
+                            "Time Inputs"
                         }
-                        for lc in labor_codes.read().iter() {
-                            option { value: "{lc.id}", "{lc.wbs_number} — {lc.name}" }
+                        button {
+                            r#type: "button",
+                            class: if *mode.read() == EntryMode::Duration {
+                                "flex-1 btn btn-xs btn-primary rounded-none border-0"
+                            } else {
+                                "flex-1 btn btn-xs btn-ghost rounded-none border-0 text-[#8b949e]"
+                            },
+                            onclick: move |_| *mode.write() = EntryMode::Duration,
+                            "Duration"
                         }
                     }
-                }
 
-                // Hour Type
-                div { class: "form-control mb-3",
-                    label { class: "label", span { class: "label-text", "Hour Type" } }
-                    select {
-                        class: "select select-bordered w-full",
-                        value: "{hour_type_id}",
-                        onchange: move |e| *hour_type_id.write() = e.value(),
-                        option { value: "", disabled: true,
-                            selected: hour_type_id.read().is_empty(),
-                            "Select hour type"
+                    // Labor Code
+                    div { class: "flex flex-col gap-1",
+                        label { class: "text-xs font-medium text-[#8b949e] uppercase tracking-wide",
+                            "Labor Code"
                         }
-                        for ht in hour_types.read().iter() {
-                            option { value: "{ht.id}", "{ht.code} — {ht.name}" }
+                        select {
+                            class: "pd-select input input-bordered w-full text-sm",
+                            value: "{labor_code_id}",
+                            onchange: move |e| *labor_code_id.write() = e.value(),
+                            option { value: "", disabled: true,
+                                selected: labor_code_id.read().is_empty(),
+                                "Select labor code"
+                            }
+                            for lc in labor_codes.read().iter() {
+                                option { value: "{lc.id}", "{lc.wbs_number} — {lc.name}" }
+                            }
                         }
                     }
-                }
 
-                // Telework
-                div { class: "form-control mb-3",
-                    label { class: "label cursor-pointer",
-                        span { class: "label-text", "Telework" }
+                    // Hour Type
+                    div { class: "flex flex-col gap-1",
+                        label { class: "text-xs font-medium text-[#8b949e] uppercase tracking-wide",
+                            "Hour Type"
+                        }
+                        select {
+                            class: "pd-select input input-bordered w-full text-sm",
+                            value: "{hour_type_id}",
+                            onchange: move |e| *hour_type_id.write() = e.value(),
+                            option { value: "", disabled: true,
+                                selected: hour_type_id.read().is_empty(),
+                                "Select hour type"
+                            }
+                            for ht in hour_types.read().iter() {
+                                option { value: "{ht.id}", "{ht.code} — {ht.name}" }
+                            }
+                        }
+                    }
+
+                    // Start Time
+                    div { class: "flex flex-col gap-1",
+                        label { class: "text-xs font-medium text-[#8b949e] uppercase tracking-wide",
+                            "Start Time"
+                        }
+                        div { class: "relative",
+                            input {
+                                r#type: "time",
+                                class: "input input-bordered w-full text-sm",
+                                value: "{start_time}",
+                                oninput: move |e| *start_time.write() = e.value(),
+                            }
+                            button {
+                                r#type: "button",
+                                class: "pd-now-btn",
+                                onclick: move |_| *start_time.write() = start_now_hhmm(),
+                                "NOW"
+                            }
+                        }
+                    }
+
+                    // End Time (Time Inputs mode) or Duration (Duration mode)
+                    if *mode.read() == EntryMode::TimeInputs {
+                        div { class: "flex flex-col gap-1",
+                            label { class: "text-xs font-medium text-[#8b949e] uppercase tracking-wide",
+                                "End Time (optional)"
+                            }
+                            div { class: "relative",
+                                input {
+                                    r#type: "time",
+                                    class: "input input-bordered w-full text-sm",
+                                    value: "{end_time}",
+                                    oninput: move |e| *end_time.write() = e.value(),
+                                }
+                                button {
+                                    r#type: "button",
+                                    class: "pd-now-btn",
+                                    onclick: move |_| *end_time.write() = end_now_hhmm(),
+                                    "NOW"
+                                }
+                            }
+                        }
+                    } else {
+                        div { class: "flex flex-col gap-1",
+                            label { class: "text-xs font-medium text-[#8b949e] uppercase tracking-wide",
+                                "Duration (hours)"
+                            }
+                            input {
+                                r#type: "number",
+                                class: "input input-bordered w-full text-sm",
+                                min: "0.25", max: "24", step: "0.25",
+                                value: "{duration}",
+                                oninput: move |e| {
+                                    if let Ok(v) = e.value().parse::<f64>() { *duration.write() = v; }
+                                },
+                            }
+                        }
+                    }
+
+                    // Telework
+                    div { class: "flex items-center justify-between",
+                        label { class: "text-xs font-medium text-[#8b949e] uppercase tracking-wide",
+                            "Telework"
+                        }
                         input {
                             r#type: "checkbox",
                             class: "toggle toggle-primary",
@@ -181,65 +280,28 @@ pub fn EntryFormModal(
                     }
                 }
 
-                // Time or Duration inputs
-                div { class: "grid grid-cols-2 gap-3 mb-3",
-                    div { class: "form-control",
-                        label { class: "label", span { class: "label-text", "Start Time" } }
-                        input {
-                            r#type: "time",
-                            class: "input input-bordered",
-                            value: "{start_time}",
-                            oninput: move |e| *start_time.write() = e.value(),
-                        }
-                    }
-                    if *mode.read() == EntryMode::TimeInputs {
-                        div { class: "form-control",
-                            label { class: "label", span { class: "label-text", "End Time (optional)" } }
-                            input {
-                                r#type: "time",
-                                class: "input input-bordered",
-                                value: "{end_time}",
-                                oninput: move |e| *end_time.write() = e.value(),
-                            }
-                        }
-                    } else {
-                        div { class: "form-control",
-                            label { class: "label", span { class: "label-text", "Duration (hours)" } }
-                            input {
-                                r#type: "number",
-                                class: "input input-bordered",
-                                min: "0.25", max: "24", step: "0.25",
-                                value: "{duration}",
-                                oninput: move |e| {
-                                    if let Ok(v) = e.value().parse::<f64>() { *duration.write() = v; }
-                                },
-                            }
-                        }
-                    }
-                }
-
-                // Error
+                // ── Error banner ─────────────────────────────────────────
                 if let Some(ref msg) = *error.read() {
-                    div { class: "alert alert-error mb-3", span { "{msg}" } }
+                    div { class: "mx-5 mb-2 alert alert-error text-sm py-2",
+                        span { "{msg}" }
+                    }
                 }
 
-                div { class: "modal-action",
+                // ── Footer ───────────────────────────────────────────────
+                div { class: "flex-shrink-0 flex gap-2 px-5 py-4 border-t border-[#30363d]",
                     button {
-                        class: "btn btn-ghost",
+                        r#type: "button",
+                        class: "btn btn-ghost btn-sm",
                         onclick: move |_| on_close.call(()),
                         "Cancel"
                     }
                     button {
-                        class: "btn btn-primary",
+                        r#type: "button",
+                        class: "btn btn-primary btn-sm flex-1",
                         onclick: handle_submit,
-                        if editing.is_some() { "Update" } else { "Create" }
+                        if is_editing { "Update" } else { "Create" }
                     }
                 }
-            }
-            // Click outside to close
-            div {
-                class: "modal-backdrop",
-                onclick: move |_| on_close.call(()),
             }
         }
     }
