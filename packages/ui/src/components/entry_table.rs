@@ -10,65 +10,86 @@ pub fn EntryTable(
 ) -> Element {
     if entries.is_empty() {
         return rsx! {
-            p { class: "text-base-content/50 py-6 text-center text-sm", "No entries." }
+            p { class: "text-[#8b949e] py-8 text-center text-sm", "No entries for this period." }
         };
     }
 
     rsx! {
         div { class: "overflow-x-auto",
-            table { class: "table table-zebra table-sm w-full",
+            table { class: "w-full border border-[#21262d] rounded-lg overflow-hidden border-collapse",
                 thead {
-                    tr {
-                        th { "WBS" }
-                        th { "Type" }
-                        th { "Start" }
-                        th { "End" }
-                        th { "Hours" }
-                        th { "TW" }
-                        th { }
+                    tr { class: "bg-[#161b22]",
+                        th { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold text-left px-4 py-2.5 border-b border-[#21262d]", "Code" }
+                        th { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold text-left px-4 py-2.5 border-b border-[#21262d]", "Type" }
+                        th { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold text-left px-4 py-2.5 border-b border-[#21262d]", "Start → End" }
+                        th { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold text-left px-4 py-2.5 border-b border-[#21262d]", "Hrs" }
+                        th { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold text-right px-4 py-2.5 border-b border-[#21262d]", "Actions" }
                     }
                 }
                 tbody {
                     for entry in entries.iter() {
                         tr { key: "{entry.id}",
-                            td { class: "font-mono text-xs", "{entry.wbs_number}" }
-                            td { code { class: "badge badge-ghost badge-sm", "{entry.hour_type_code}" } }
-                            td { "{utc_to_central_hhmm(&entry.start_time)}" }
-                            td {
+                            class: "border-b border-[#21262d] last:border-b-0 hover:bg-[#161b2280] transition-colors",
+
+                            // Code name + optional TW badge
+                            td { class: "px-4 py-[11px]",
+                                div { class: "flex items-center gap-2",
+                                    span { class: "text-[#e6edf3] font-medium text-sm", "{entry.labor_code_name}" }
+                                    if entry.telework {
+                                        span { class: "pd-tw-badge", "TW" }
+                                    }
+                                }
+                            }
+
+                            // Hour type — color coded
+                            td { class: "px-4 py-[11px]",
+                                span {
+                                    class: if entry.hour_type_code.to_uppercase() == "OT" { "pd-type-ot font-mono text-xs" }
+                                           else { "pd-type-reg font-mono text-xs" },
+                                    "{entry.hour_type_code}"
+                                }
+                            }
+
+                            // Start → End
+                            td { class: "px-4 py-[11px] font-mono text-xs text-[#8b949e]",
                                 if let Some(ref end) = entry.end_time {
-                                    "{utc_to_central_hhmm(end)}"
+                                    "{utc_to_central_hhmm(&entry.start_time)} → {utc_to_central_hhmm(end)}"
                                 } else {
-                                    span { class: "badge badge-warning badge-sm", "In Progress" }
+                                    div { class: "flex items-center gap-2",
+                                        span { "{utc_to_central_hhmm(&entry.start_time)} →" }
+                                        span { class: "pd-in-progress", "In Progress" }
+                                    }
                                 }
                             }
-                            td {
+
+                            // Hours
+                            td { class: "px-4 py-[11px] font-mono text-sm font-bold",
                                 if let Some(h) = entry.decimal_hours {
-                                    span { class: "font-semibold", "{h:.2}" }
+                                    span { class: "text-[#e6edf3]", "{h:.2}" }
                                 } else {
-                                    span { class: "text-base-content/40", "—" }
+                                    span { class: "text-[#8b949e]", "—" }
                                 }
                             }
-                            td {
-                                if entry.telework {
-                                    span { class: "badge badge-info badge-xs", "TW" }
-                                }
-                            }
-                            td { class: "flex gap-1",
-                                button {
-                                    class: "btn btn-xs btn-ghost",
-                                    onclick: {
-                                        let entry = entry.clone();
-                                        move |_| on_edit.call(entry.clone())
-                                    },
-                                    "Edit"
-                                }
-                                button {
-                                    class: "btn btn-xs btn-ghost text-error",
-                                    onclick: {
-                                        let id = entry.id;
-                                        move |_| on_delete.call(id)
-                                    },
-                                    "✕"
+
+                            // Actions — always visible
+                            td { class: "px-4 py-[11px]",
+                                div { class: "flex gap-1.5 justify-end",
+                                    button {
+                                        class: "pd-action-edit",
+                                        onclick: {
+                                            let entry = entry.clone();
+                                            move |_| on_edit.call(entry.clone())
+                                        },
+                                        "Edit"
+                                    }
+                                    button {
+                                        class: "pd-action-delete",
+                                        onclick: {
+                                            let id = entry.id;
+                                            move |_| on_delete.call(id)
+                                        },
+                                        "Delete"
+                                    }
                                 }
                             }
                         }
