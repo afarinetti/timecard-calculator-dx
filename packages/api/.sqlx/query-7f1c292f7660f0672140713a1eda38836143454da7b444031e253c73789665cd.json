@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO labor_codes (wbs_number, name) VALUES ($1, $2) ON CONFLICT(wbs_number) DO UPDATE SET name = excluded.name",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "7f1c292f7660f0672140713a1eda38836143454da7b444031e253c73789665cd"
+}

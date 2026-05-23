@@ -306,6 +306,121 @@ impl<'a> Repository<'a> {
         periods
     }
 
+    // --- Aggregates ---
+
+    pub async fn get_day_summary(&self, date: &str) -> Result<DaySummary, sqlx::Error> {
+        let entries = self.list_timecard_entries(date, date).await?;
+        let total_hours: f64 = entries.iter().filter_map(|e| e.decimal_hours).sum();
+        let by_labor_code = Self::aggregate_by_labor_code(&entries);
+        Ok(DaySummary { entries, total_hours, by_labor_code })
+    }
+
+    pub async fn get_week_summary(&self, week_start: &str) -> Result<WeekSummary, sqlx::Error> {
+        use chrono::{Duration, NaiveDate};
+        let start = week_start.parse::<NaiveDate>().map_err(|_| sqlx::Error::RowNotFound)?;
+        let end = (start + Duration::days(6)).format("%Y-%m-%d").to_string();
+        let entries = self.list_timecard_entries(week_start, &end).await?;
+        let total_hours: f64 = entries.iter().filter_map(|e| e.decimal_hours).sum();
+        let by_day = Self::aggregate_by_day(&entries, week_start, &end);
+        let by_labor_code = Self::aggregate_by_labor_code(&entries);
+        Ok(WeekSummary { entries, total_hours, by_day, by_labor_code })
+    }
+
+    pub async fn get_pay_period_summary(
+        &self,
+        period_start: &str,
+        period_end: &str,
+    ) -> Result<WeekSummary, sqlx::Error> {
+        let entries = self.list_timecard_entries(period_start, period_end).await?;
+        let total_hours: f64 = entries.iter().filter_map(|e| e.decimal_hours).sum();
+        let by_day = Self::aggregate_by_day(&entries, period_start, period_end);
+        let by_labor_code = Self::aggregate_by_labor_code(&entries);
+        Ok(WeekSummary { entries, total_hours, by_day, by_labor_code })
+    }
+
+    fn aggregate_by_day(entries: &[TimecardEntryView], from: &str, to: &str) -> Vec<DayAggregate> {
+        use chrono::{Duration, NaiveDate};
+        let mut result = Vec::new();
+        let start = match from.parse::<NaiveDate>() { Ok(d) => d, Err(_) => return result };
+        let end = match to.parse::<NaiveDate>() { Ok(d) => d, Err(_) => return result };
+        let mut cur = start;
+        while cur <= end {
+            let date_str = cur.format("%Y-%m-%d").to_string();
+            let total_hours = entries
+                .iter()
+                .filter(|e| e.date == date_str)
+                .filter_map(|e| e.decimal_hours)
+                .sum();
+            result.push(DayAggregate { date: date_str, total_hours });
+            cur += Duration::days(1);
+        }
+        result
+    }
+
+    fn aggregate_by_labor_code(entries: &[TimecardEntryView]) -> Vec<AggregateRow> {
+        use std::collections::HashMap;
+        let mut map: HashMap<i64, AggregateRow> = HashMap::new();
+        for e in entries {
+            let row = map.entry(e.labor_code_id).or_insert_with(|| AggregateRow {
+                wbs_number: e.wbs_number.clone(),
+                labor_code_name: e.labor_code_name.clone(),
+                total_hours: 0.0,
+            });
+            row.total_hours += e.decimal_hours.unwrap_or(0.0);
+        }
+        let mut result: Vec<AggregateRow> = map.into_values().collect();
+        result.sort_by(|a, b| a.wbs_number.cmp(&b.wbs_number));
+        result
+    }
+
+    // --- Import ---
+
+    pub async fn import_lookup_data(
+        &self,
+        labor_codes: &[ImportLaborCode],
+        hour_types: &[ImportHourType],
+    ) -> ImportResult {
+        let mut lc_count = 0u64;
+        for lc in labor_codes {
+            if sqlx::query!(
+                "INSERT INTO labor_codes (wbs_number, name) VALUES ($1, $2) ON CONFLICT(wbs_number) DO UPDATE SET name = excluded.name",
+                lc.wbs_number, lc.name,
+            )
+            .execute(self.pool)
+            .await
+            .is_ok() { lc_count += 1; }
+        }
+        let mut ht_count = 0u64;
+        for ht in hour_types {
+            if sqlx::query!(
+                "INSERT INTO hour_types (code, name) VALUES ($1, $2) ON CONFLICT(code) DO UPDATE SET name = excluded.name",
+                ht.code, ht.name,
+            )
+            .execute(self.pool)
+            .await
+            .is_ok() { ht_count += 1; }
+        }
+        ImportResult { imported_labor_codes: lc_count, imported_hour_types: ht_count }
+    }
+
+    // --- Export ---
+
+    /// Returns all labor codes and hour types as an ImportPayload (same shape as import).
+    pub async fn export_lookup_data(&self) -> Result<ImportPayload, sqlx::Error> {
+        let labor_codes = self.list_labor_codes().await?;
+        let hour_types = self.list_hour_types().await?;
+        Ok(ImportPayload {
+            labor_codes: labor_codes
+                .into_iter()
+                .map(|lc| ImportLaborCode { wbs_number: lc.wbs_number, name: lc.name })
+                .collect(),
+            hour_types: hour_types
+                .into_iter()
+                .map(|ht| ImportHourType { code: ht.code, name: ht.name })
+                .collect(),
+        })
+    }
+
     async fn get_entry_view_by_id(&self, id: i64) -> Result<TimecardEntryView, sqlx::Error> {
         let row = sqlx::query_as!(
             TimecardEntryRow,
@@ -650,5 +765,34 @@ mod tests {
         for w in periods.windows(2) {
             assert!(w[0].start_date < w[1].start_date, "periods must be sorted");
         }
+    }
+
+    #[sqlx::test(migrator = "crate::db::MIGRATOR")]
+    async fn get_day_summary_totals_correctly(pool: sqlx::SqlitePool) {
+        let (lc_id, ht_id) = seed_lookup(&pool).await;
+        let repo = Repository::new(&pool);
+        repo.create_timecard_entry(&CreateTimecardEntry {
+            labor_code_id: lc_id, hour_type_id: ht_id, telework: false,
+            date: "2026-05-21".into(), start_time: "08:00".into(), end_time: Some("16:00".into()),
+        }).await.unwrap();
+        repo.create_timecard_entry(&CreateTimecardEntry {
+            labor_code_id: lc_id, hour_type_id: ht_id, telework: false,
+            date: "2026-05-21".into(), start_time: "16:00".into(), end_time: Some("18:00".into()),
+        }).await.unwrap();
+        let summary = repo.get_day_summary("2026-05-21").await.unwrap();
+        assert_eq!(summary.entries.len(), 2);
+        assert_eq!(summary.total_hours, 10.0);
+    }
+
+    #[sqlx::test(migrator = "crate::db::MIGRATOR")]
+    async fn import_upserts_on_conflict(pool: sqlx::SqlitePool) {
+        let repo = Repository::new(&pool);
+        let payload = vec![ImportLaborCode { wbs_number: "WBS-X".into(), name: "Old".into() }];
+        repo.import_lookup_data(&payload, &[]).await;
+        let payload2 = vec![ImportLaborCode { wbs_number: "WBS-X".into(), name: "New".into() }];
+        repo.import_lookup_data(&payload2, &[]).await;
+        let list = repo.list_labor_codes().await.unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].name, "New");
     }
 }
