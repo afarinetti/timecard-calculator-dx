@@ -41,6 +41,7 @@ serde_json = "1"
 once_cell = "1"
 dirs = "5"
 tokio = { version = "1", features = ["full"] }
+rfd = "0.15"          # native file dialogs (save/open) — used by ui package
 
 # workspace crates
 ui = { path = "packages/ui" }
@@ -99,6 +100,7 @@ dioxus = { workspace = true, features = ["desktop", "router"] }
 api = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
+rfd = { workspace = true }
 ```
 
 - [ ] **Step 6: Verify `cargo check` passes**
@@ -266,6 +268,7 @@ pub struct TimecardEntryView {
 
 impl From<TimecardEntryRow> for TimecardEntryView {
     fn from(r: TimecardEntryRow) -> Self {
+        // compute_decimal_hours is a standalone pub fn in repo.rs — no circular issue.
         let decimal_hours = crate::db::repo::compute_decimal_hours(
             &r.start_time,
             r.end_time.as_deref(),
@@ -363,6 +366,12 @@ pub struct ImportHourType {
     pub name: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct ImportPayload {
+    pub labor_codes: Vec<ImportLaborCode>,
+    pub hour_types: Vec<ImportHourType>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ImportResult {
     pub imported_labor_codes: u64,
@@ -440,12 +449,31 @@ git commit -m "feat: add db module with static pool and sqlx migrations"
 
 - [ ] **Step 1: Write repository struct and helpers**
 
+`compute_decimal_hours` is a standalone `pub fn` (not a `Repository` method) so that `models.rs` can call it from the `From<TimecardEntryRow>` impl without a layering issue.
+
 ```rust
 use chrono::NaiveDateTime;
 use chrono_tz::America::Chicago;
 use chrono::TimeZone;
 use sqlx::SqlitePool;
 use super::models::*;
+
+/// Compute decimal hours rounded to nearest 15 minutes.
+/// Returns None if end_time is None (entry in progress).
+pub fn compute_decimal_hours(start_time: &str, end_time: Option<&str>) -> Option<f64> {
+    let end = end_time?;
+    let parse = |s: &str| {
+        NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f+00:00")
+            .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%SZ"))
+            .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S"))
+            .ok()
+    };
+    let start = parse(start_time)?;
+    let end = parse(end)?;
+    let minutes = (end - start).num_minutes() as f64;
+    let rounded = (minutes / 15.0).round() * 15.0;
+    Some(rounded / 60.0)
+}
 
 pub struct Repository<'a> {
     pool: &'a SqlitePool,
@@ -469,23 +497,6 @@ impl<'a> Repository<'a> {
             .expect("Ambiguous or invalid Central time")
             .with_timezone(&chrono::Utc)
             .to_rfc3339()
-    }
-
-    /// Compute decimal hours rounded to nearest 15 minutes.
-    /// Returns None if end_time is None (entry in progress).
-    pub fn compute_decimal_hours(start_time: &str, end_time: Option<&str>) -> Option<f64> {
-        let end = end_time?;
-        let parse = |s: &str| {
-            NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f+00:00")
-                .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%SZ"))
-                .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S"))
-                .ok()
-        };
-        let start = parse(start_time)?;
-        let end = parse(end)?;
-        let minutes = (end - start).num_minutes() as f64;
-        let rounded = (minutes / 15.0).round() * 15.0;
-        Some(rounded / 60.0)
     }
 
     /// Fetch a single entry view by id (after insert/update).
@@ -904,6 +915,22 @@ impl<'a> Repository<'a> {
         }
         ImportResult { imported_labor_codes: lc_count, imported_hour_types: ht_count }
     }
+
+    /// Export all labor codes and hour types as an ImportPayload (same shape as import).
+    pub async fn export_lookup_data(&self) -> Result<ImportPayload, sqlx::Error> {
+        let labor_codes = self.list_labor_codes().await?;
+        let hour_types = self.list_hour_types().await?;
+        Ok(ImportPayload {
+            labor_codes: labor_codes.into_iter().map(|lc| ImportLaborCode {
+                wbs_number: lc.wbs_number,
+                name: lc.name,
+            }).collect(),
+            hour_types: hour_types.into_iter().map(|ht| ImportHourType {
+                code: ht.code,
+                name: ht.name,
+            }).collect(),
+        })
+    }
 }
 ```
 
@@ -965,13 +992,13 @@ git commit -m "feat: wire api lib and desktop entry point"
 ```rust
 #[cfg(test)]
 mod tests {
-    use crate::db::repo::Repository;
+    use crate::db::repo::compute_decimal_hours;
 
     #[test]
     fn rounding_exact_15() {
         // 8h 15m → 8.25
         assert_eq!(
-            Repository::compute_decimal_hours("2026-05-21T07:00:00Z", Some("2026-05-21T15:15:00Z")),
+            compute_decimal_hours("2026-05-21T07:00:00Z", Some("2026-05-21T15:15:00Z")),
             Some(8.25)
         );
     }
@@ -980,7 +1007,7 @@ mod tests {
     fn rounding_up() {
         // 8h 12m = 492m → 495m → 8.25
         assert_eq!(
-            Repository::compute_decimal_hours("2026-05-21T07:00:00Z", Some("2026-05-21T15:12:00Z")),
+            compute_decimal_hours("2026-05-21T07:00:00Z", Some("2026-05-21T15:12:00Z")),
             Some(8.25)
         );
     }
@@ -989,21 +1016,21 @@ mod tests {
     fn rounding_down() {
         // 8h 8m = 488m → 480m → 8.0
         assert_eq!(
-            Repository::compute_decimal_hours("2026-05-21T07:00:00Z", Some("2026-05-21T15:08:00Z")),
+            compute_decimal_hours("2026-05-21T07:00:00Z", Some("2026-05-21T15:08:00Z")),
             Some(8.0)
         );
     }
 
     #[test]
     fn rounding_null_end() {
-        assert_eq!(Repository::compute_decimal_hours("2026-05-21T07:00:00Z", None), None);
+        assert_eq!(compute_decimal_hours("2026-05-21T07:00:00Z", None), None);
     }
 
     #[test]
     fn rounding_7m_rounds_down() {
         // 7m → 0m → 0.0
         assert_eq!(
-            Repository::compute_decimal_hours("2026-05-21T07:00:00Z", Some("2026-05-21T07:07:00Z")),
+            compute_decimal_hours("2026-05-21T07:00:00Z", Some("2026-05-21T07:07:00Z")),
             Some(0.0)
         );
     }
@@ -1012,7 +1039,7 @@ mod tests {
     fn rounding_8m_rounds_up() {
         // 8m → 15m → 0.25
         assert_eq!(
-            Repository::compute_decimal_hours("2026-05-21T07:00:00Z", Some("2026-05-21T07:08:00Z")),
+            compute_decimal_hours("2026-05-21T07:00:00Z", Some("2026-05-21T07:08:00Z")),
             Some(0.25)
         );
     }
@@ -1021,7 +1048,7 @@ mod tests {
     fn rounding_exact_half() {
         // 4h 30m → 4.5
         assert_eq!(
-            Repository::compute_decimal_hours("2026-05-21T08:00:00Z", Some("2026-05-21T12:30:00Z")),
+            compute_decimal_hours("2026-05-21T08:00:00Z", Some("2026-05-21T12:30:00Z")),
             Some(4.5)
         );
     }

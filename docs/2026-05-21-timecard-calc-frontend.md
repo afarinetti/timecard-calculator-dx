@@ -936,6 +936,7 @@ git commit -m "feat: add dashboard page with day/week tabs and entry form"
 use dioxus::prelude::*;
 use api::{LaborCode, HourType, PayPeriodAnchor, Repository,
           CreateLaborCode, UpdateLaborCode, CreateHourType, UpdateHourType};
+use rfd;
 
 #[component]
 pub fn Settings() -> Element {
@@ -1291,24 +1292,54 @@ pub fn Settings() -> Element {
                     }
                 }
             }
+
+            // --- JSON Export ---
+            div { class: "card bg-base-200",
+                div { class: "card-body",
+                    h2 { class: "card-title", "Export JSON" }
+                    p { class: "text-sm text-base-content/60 mb-3",
+                        "Export all labor codes and hour types to a JSON file (same format as import)."
+                    }
+                    button {
+                        class: "btn btn-sm btn-outline",
+                        onclick: move |_| {
+                            let mut err = error;
+                            spawn(async move {
+                                let pool = api::pool();
+                                let repo = Repository::new(pool);
+                                match repo.export_lookup_data().await {
+                                    Err(e) => { *err.write() = Some(e.to_string()); return; }
+                                    Ok(payload) => {
+                                        let json = match serde_json::to_string_pretty(&payload) {
+                                            Ok(s) => s,
+                                            Err(e) => { *err.write() = Some(e.to_string()); return; }
+                                        };
+                                        // Open native save-file dialog
+                                        if let Some(path) = rfd::AsyncFileDialog::new()
+                                            .set_title("Export lookup data")
+                                            .set_file_name("timecard-lookup.json")
+                                            .add_filter("JSON", &["json"])
+                                            .save_file()
+                                            .await
+                                        {
+                                            if let Err(e) = std::fs::write(path.path(), json.as_bytes()) {
+                                                *err.write() = Some(e.to_string());
+                                            }
+                                        }
+                                    }
+                                }
+                            });
+                        },
+                        "Export"
+                    }
+                }
+            }
         }
     }
 }
 ```
 
-- [ ] **Step 2: Add `ImportPayload` to `api::models`**
-
-Add this struct to `packages/api/src/db/models.rs` and re-export from `packages/api/src/lib.rs`:
-
-```rust
-#[derive(Debug, Clone, Deserialize)]
-pub struct ImportPayload {
-    pub labor_codes: Vec<ImportLaborCode>,
-    pub hour_types: Vec<ImportHourType>,
-}
-```
-
-- [ ] **Step 3: Commit**
+- [ ] **Step 2: Commit**
 
 ```bash
 git add packages/ui/src/pages/settings.rs

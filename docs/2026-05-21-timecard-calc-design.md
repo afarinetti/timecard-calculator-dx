@@ -263,6 +263,7 @@ DaisyUI `modal` (`<dialog>` element with `.modal-open`) containing:
 - **Labor Codes**: DaisyUI `table` with inline edit/delete, plus "Add" button opening an inline form row.
 - **Hour Types**: same pattern.
 - **Import JSON**: `<input type="file">` + button. Expects `{ "labor_codes": [...], "hour_types": [...] }`. Upserts on import.
+- **Export JSON**: Button that opens a native save-file dialog (`rfd::AsyncFileDialog`) and writes all labor codes and hour types as JSON in the same shape as the import format.
 
 ## Error Handling
 
