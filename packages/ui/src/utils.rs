@@ -53,6 +53,32 @@ pub fn live_elapsed_hours(utc_start: &str) -> f64 {
     }
 }
 
+fn round_to_nearest_15(minutes: u32) -> u32 {
+    ((minutes + 7) / 15) * 15
+}
+
+fn ceil_to_next_15(minutes: u32) -> u32 {
+    ((minutes + 14) / 15) * 15
+}
+
+pub fn start_now_hhmm() -> String {
+    use chrono::Timelike;
+    let now = chrono::Local::now();
+    let total = now.hour() * 60 + now.minute();
+    let adjusted = total.saturating_sub(15);
+    let rounded = round_to_nearest_15(adjusted).min(1439);
+    format!("{:02}:{:02}", rounded / 60, rounded % 60)
+}
+
+pub fn end_now_hhmm() -> String {
+    use chrono::Timelike;
+    let now = chrono::Local::now();
+    let total = now.hour() * 60 + now.minute();
+    let adjusted = total + 15;
+    let rounded = ceil_to_next_15(adjusted).min(1439);
+    format!("{:02}:{:02}", rounded / 60, rounded % 60)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,5 +128,57 @@ mod tests {
     #[test]
     fn utc_to_central_hhmm_invalid_returns_placeholder() {
         assert_eq!(utc_to_central_hhmm("not-a-date"), "??:??");
+    }
+
+    // ── Now-button rounding ──
+
+    #[test]
+    fn round_start_mid_interval() {
+        // 13:52 (832 min) is 7 from 13:45 (825) and 8 from 14:00 (840) → rounds to 825
+        assert_eq!(round_to_nearest_15(832), 825);
+    }
+
+    #[test]
+    fn round_start_equidistant_rounds_up() {
+        // 15:07 = 907 min → nearest: 900 (7 away) or 915 (8 away) → 900
+        assert_eq!(round_to_nearest_15(907), 900);
+    }
+
+    #[test]
+    fn round_start_on_boundary() {
+        // 14:00 (840) is already on a boundary → stays 840
+        assert_eq!(round_to_nearest_15(840), 840);
+    }
+
+    #[test]
+    fn round_end_mid_interval() {
+        // 14:22 (862 min) → ceil to next 15 → 870 (14:30)
+        assert_eq!(ceil_to_next_15(862), 870);
+    }
+
+    #[test]
+    fn round_end_on_boundary() {
+        // 14:30 (870 min) → already on boundary → stays 870
+        assert_eq!(ceil_to_next_15(870), 870);
+    }
+
+    #[test]
+    fn round_end_just_past_boundary() {
+        // 14:31 (871 min) → next boundary is 14:45 (885)
+        assert_eq!(ceil_to_next_15(871), 885);
+    }
+
+    #[test]
+    fn start_now_hhmm_format() {
+        let s = start_now_hhmm();
+        assert_eq!(s.len(), 5);
+        assert_eq!(&s[2..3], ":");
+    }
+
+    #[test]
+    fn end_now_hhmm_format() {
+        let s = end_now_hhmm();
+        assert_eq!(s.len(), 5);
+        assert_eq!(&s[2..3], ":");
     }
 }
