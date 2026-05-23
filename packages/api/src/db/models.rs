@@ -63,7 +63,7 @@ pub struct TimecardEntryRow {
 }
 
 /// Public view with computed `decimal_hours` and normalized `telework: bool`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TimecardEntryView {
     pub id: i64,
     pub labor_code_id: i64,

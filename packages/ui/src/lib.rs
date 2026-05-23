@@ -1,8 +1,7 @@
+pub mod app;
+pub mod routes;
 pub mod utils;
+pub mod components;
+pub mod pages;
 
-use dioxus::prelude::*;
-
-#[component]
-pub fn App() -> Element {
-    rsx! { div { "Timecard Calc — loading..." } }
-}
+pub use app::App;
