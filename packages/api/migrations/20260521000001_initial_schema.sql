@@ -12,8 +12,8 @@ CREATE TABLE IF NOT EXISTS hour_types (
 
 CREATE TABLE IF NOT EXISTS timecard_entries (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    labor_code_id  INTEGER NOT NULL REFERENCES labor_codes(id),
-    hour_type_id   INTEGER NOT NULL REFERENCES hour_types(id),
+    labor_code_id  INTEGER NOT NULL REFERENCES labor_codes(id) ON DELETE RESTRICT,
+    hour_type_id   INTEGER NOT NULL REFERENCES hour_types(id)  ON DELETE RESTRICT,
     telework       INTEGER NOT NULL DEFAULT 0,
     date           TEXT NOT NULL,
     start_time     TEXT NOT NULL,
