@@ -1,4 +1,10 @@
 fn main() {
-    // TODO: implemented in Task 10 — api::db::init() + dioxus::launch(ui::App)
+    let db_path = dirs::data_dir()
+        .expect("Cannot locate app data directory")
+        .join("timecard-calc")
+        .join("timecard.db");
+
+    api::db::init(db_path);
+
     dioxus::launch(ui::App);
 }
