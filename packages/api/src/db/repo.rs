@@ -16,6 +16,9 @@ pub fn compute_decimal_hours(start_time: &str, end_time: Option<&str>) -> Option
     let start = parse(start_time)?;
     let end = parse(end)?;
     let minutes = (end - start).num_minutes() as f64;
+    if minutes < 0.0 {
+        return None;
+    }
     let rounded = (minutes / 15.0).round() * 15.0;
     Some(rounded / 60.0)
 }
@@ -90,6 +93,14 @@ mod tests {
         assert_eq!(
             compute_decimal_hours("2026-05-21T07:00:00Z", Some("2026-05-21T07:00:00Z")),
             Some(0.0)
+        );
+    }
+
+    #[test]
+    fn end_before_start_returns_none() {
+        assert_eq!(
+            compute_decimal_hours("2026-05-21T08:00:00Z", Some("2026-05-21T07:00:00Z")),
+            None
         );
     }
 }
