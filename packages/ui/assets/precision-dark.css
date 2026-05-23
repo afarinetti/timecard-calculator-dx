@@ -1,0 +1,164 @@
+/* Override DaisyUI dark theme palette */
+:root {
+  --color-base-100: #0d1117;
+  --color-base-200: #161b22;
+  --color-base-300: #21262d;
+  --color-base-content: #e6edf3;
+  --color-primary: #58a6ff;
+  --color-primary-content: #0d1117;
+  --color-success: #3fb950;
+  --color-warning: #d29922;
+  --color-error: #f85149;
+}
+
+/* Precision Dark custom utilities */
+
+/* Sidebar nav item — active state */
+.pd-nav-active {
+  background-color: #1f6feb22;
+  border: 1px solid #1f6feb44;
+}
+.pd-nav-active .pd-nav-icon,
+.pd-nav-active .pd-nav-label {
+  color: #58a6ff;
+}
+.pd-nav-inactive .pd-nav-icon,
+.pd-nav-inactive .pd-nav-label {
+  color: #8b949e;
+}
+
+/* TW badge */
+.pd-tw-badge {
+  background-color: #1f6feb22;
+  color: #58a6ff;
+  border: 1px solid #1f6feb44;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+/* Hour type colors */
+.pd-type-reg { color: #3fb950; font-weight: 700; }
+.pd-type-ot  { color: #d29922; font-weight: 700; }
+
+/* In-progress badge */
+.pd-in-progress {
+  background-color: #d2922211;
+  color: #d29922;
+  border: 1px solid #d2922233;
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+/* Stat card value */
+.pd-stat-value {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 28px;
+  font-weight: 700;
+  color: #e6edf3;
+  line-height: 1;
+}
+.pd-stat-value-ok {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 28px;
+  font-weight: 700;
+  color: #3fb950;
+  line-height: 1;
+}
+
+/* Now button (overlaid on time inputs) */
+.pd-now-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: #21262d;
+  border: 1px solid #30363d;
+  color: #8b949e;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  line-height: 1.4;
+}
+.pd-now-btn:hover {
+  background: #1f6feb22;
+  border-color: #58a6ff;
+  color: #58a6ff;
+}
+
+/* Action buttons (always visible, bordered) */
+.pd-action-edit {
+  background: none;
+  border: 1px solid #30363d;
+  color: #8b949e;
+  padding: 4px 10px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.pd-action-edit:hover {
+  border-color: #58a6ff;
+  color: #58a6ff;
+  background: #1f6feb11;
+}
+.pd-action-delete {
+  background: none;
+  border: 1px solid #30363d;
+  color: #8b949e;
+  padding: 4px 10px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.pd-action-delete:hover {
+  border-color: #f85149;
+  color: #f85149;
+  background: #f8514911;
+}
+
+/* Settings sub-nav item */
+.pd-subnav-item {
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #8b949e;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.pd-subnav-item:hover {
+  background: #161b22;
+  color: #e6edf3;
+}
+.pd-subnav-active {
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  background: #1f6feb22;
+  color: #58a6ff;
+  border: 1px solid #1f6feb33;
+}
+
+/* DaisyUI select chevron (dark theme) */
+.pd-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238b949e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 34px;
+  cursor: pointer;
+}
