@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE labor_codes SET wbs_number = $1, name = $2 WHERE id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "0ef57864dd97c7fa34646a10c3760dcfef64c625cab5bdfcdfd0480810c28959"
+}

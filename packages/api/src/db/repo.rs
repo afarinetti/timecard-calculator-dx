@@ -1,4 +1,136 @@
 use chrono::NaiveDateTime;
+use chrono_tz::America::Chicago;
+use chrono::TimeZone;
+use sqlx::SqlitePool;
+use crate::db::models::*;
+
+pub struct Repository<'a> {
+    pool: &'a SqlitePool,
+}
+
+impl<'a> Repository<'a> {
+    pub fn new(pool: &'a SqlitePool) -> Self {
+        Self { pool }
+    }
+
+    /// Convert local Central "HH:MM" + "YYYY-MM-DD" to UTC ISO 8601.
+    fn central_to_utc(date: &str, time: &str) -> String {
+        let naive = NaiveDateTime::parse_from_str(
+            &format!("{}T{}:00", date, time),
+            "%Y-%m-%dT%H:%M:%S",
+        )
+        .expect("Invalid date/time string");
+        Chicago
+            .from_local_datetime(&naive)
+            .single()
+            .expect("Ambiguous or invalid Central time")
+            .with_timezone(&chrono::Utc)
+            .to_rfc3339()
+    }
+
+    /// Convert a `TimecardEntryRow` to a `TimecardEntryView` with computed decimal_hours.
+    fn row_to_view(r: TimecardEntryRow) -> TimecardEntryView {
+        let decimal_hours = compute_decimal_hours(&r.start_time, r.end_time.as_deref());
+        TimecardEntryView {
+            id: r.id,
+            labor_code_id: r.labor_code_id,
+            hour_type_id: r.hour_type_id,
+            telework: r.telework != 0,
+            date: r.date,
+            start_time: r.start_time,
+            end_time: r.end_time,
+            decimal_hours,
+            wbs_number: r.wbs_number,
+            labor_code_name: r.labor_code_name,
+            hour_type_code: r.hour_type_code,
+            hour_type_name: r.hour_type_name,
+        }
+    }
+
+    // --- Labor Codes ---
+
+    pub async fn list_labor_codes(&self) -> Result<Vec<LaborCode>, sqlx::Error> {
+        sqlx::query_as!(LaborCode, "SELECT id, wbs_number, name FROM labor_codes ORDER BY name")
+            .fetch_all(self.pool)
+            .await
+    }
+
+    pub async fn create_labor_code(&self, input: &CreateLaborCode) -> Result<LaborCode, sqlx::Error> {
+        let id = sqlx::query!(
+            "INSERT INTO labor_codes (wbs_number, name) VALUES ($1, $2)",
+            input.wbs_number, input.name,
+        )
+        .execute(self.pool)
+        .await?
+        .last_insert_rowid();
+
+        sqlx::query_as!(LaborCode, "SELECT id, wbs_number, name FROM labor_codes WHERE id = $1", id)
+            .fetch_one(self.pool)
+            .await
+    }
+
+    pub async fn update_labor_code(&self, input: &UpdateLaborCode) -> Result<LaborCode, sqlx::Error> {
+        sqlx::query!(
+            "UPDATE labor_codes SET wbs_number = $1, name = $2 WHERE id = $3",
+            input.wbs_number, input.name, input.id,
+        )
+        .execute(self.pool)
+        .await?;
+
+        sqlx::query_as!(LaborCode, "SELECT id, wbs_number, name FROM labor_codes WHERE id = $1", input.id)
+            .fetch_one(self.pool)
+            .await
+    }
+
+    pub async fn delete_labor_code(&self, id: i64) -> Result<(), sqlx::Error> {
+        sqlx::query!("DELETE FROM labor_codes WHERE id = $1", id)
+            .execute(self.pool)
+            .await?;
+        Ok(())
+    }
+
+    // --- Hour Types ---
+
+    pub async fn list_hour_types(&self) -> Result<Vec<HourType>, sqlx::Error> {
+        sqlx::query_as!(HourType, r#"SELECT id as "id!", code, name FROM hour_types ORDER BY code"#)
+            .fetch_all(self.pool)
+            .await
+    }
+
+    pub async fn create_hour_type(&self, input: &CreateHourType) -> Result<HourType, sqlx::Error> {
+        let id = sqlx::query!(
+            "INSERT INTO hour_types (code, name) VALUES ($1, $2)",
+            input.code, input.name,
+        )
+        .execute(self.pool)
+        .await?
+        .last_insert_rowid();
+
+        sqlx::query_as!(HourType, r#"SELECT id as "id!", code, name FROM hour_types WHERE id = $1"#, id)
+            .fetch_one(self.pool)
+            .await
+    }
+
+    pub async fn update_hour_type(&self, input: &UpdateHourType) -> Result<HourType, sqlx::Error> {
+        sqlx::query!(
+            "UPDATE hour_types SET code = $1, name = $2 WHERE id = $3",
+            input.code, input.name, input.id,
+        )
+        .execute(self.pool)
+        .await?;
+
+        sqlx::query_as!(HourType, r#"SELECT id as "id!", code, name FROM hour_types WHERE id = $1"#, input.id)
+            .fetch_one(self.pool)
+            .await
+    }
+
+    pub async fn delete_hour_type(&self, id: i64) -> Result<(), sqlx::Error> {
+        sqlx::query!("DELETE FROM hour_types WHERE id = $1", id)
+            .execute(self.pool)
+            .await?;
+        Ok(())
+    }
+}
 
 /// Compute decimal hours rounded to nearest 15 minutes.
 /// Returns `None` when `end_time` is `None` (entry in progress).
@@ -25,7 +157,7 @@ pub fn compute_decimal_hours(start_time: &str, end_time: Option<&str>) -> Option
 
 #[cfg(test)]
 mod tests {
-    use super::compute_decimal_hours;
+    use super::*;
 
     #[test]
     fn null_end_returns_none() {
@@ -102,5 +234,68 @@ mod tests {
             compute_decimal_hours("2026-05-21T08:00:00Z", Some("2026-05-21T07:00:00Z")),
             None
         );
+    }
+
+    // ---- Labor Codes ----
+
+    #[sqlx::test(migrator = "crate::db::MIGRATOR")]
+    async fn create_labor_code_returns_new_record(pool: sqlx::SqlitePool) {
+        let repo = Repository::new(&pool);
+        let result = repo.create_labor_code(&CreateLaborCode {
+            wbs_number: "WBS-001".into(),
+            name: "Test Project".into(),
+        })
+        .await
+        .unwrap();
+        assert_eq!(result.wbs_number, "WBS-001");
+        assert_eq!(result.name, "Test Project");
+        assert!(result.id > 0);
+    }
+
+    #[sqlx::test(migrator = "crate::db::MIGRATOR")]
+    async fn list_labor_codes_ordered_by_name(pool: sqlx::SqlitePool) {
+        let repo = Repository::new(&pool);
+        repo.create_labor_code(&CreateLaborCode { wbs_number: "Z".into(), name: "Zebra".into() }).await.unwrap();
+        repo.create_labor_code(&CreateLaborCode { wbs_number: "A".into(), name: "Alpha".into() }).await.unwrap();
+        let list = repo.list_labor_codes().await.unwrap();
+        assert_eq!(list[0].name, "Alpha");
+        assert_eq!(list[1].name, "Zebra");
+    }
+
+    #[sqlx::test(migrator = "crate::db::MIGRATOR")]
+    async fn update_labor_code(pool: sqlx::SqlitePool) {
+        let repo = Repository::new(&pool);
+        let created = repo.create_labor_code(&CreateLaborCode { wbs_number: "WBS-002".into(), name: "Old".into() }).await.unwrap();
+        let updated = repo.update_labor_code(&UpdateLaborCode { id: created.id, wbs_number: "WBS-002".into(), name: "New".into() }).await.unwrap();
+        assert_eq!(updated.name, "New");
+    }
+
+    #[sqlx::test(migrator = "crate::db::MIGRATOR")]
+    async fn delete_labor_code(pool: sqlx::SqlitePool) {
+        let repo = Repository::new(&pool);
+        let created = repo.create_labor_code(&CreateLaborCode { wbs_number: "WBS-003".into(), name: "Delete Me".into() }).await.unwrap();
+        repo.delete_labor_code(created.id).await.unwrap();
+        let list = repo.list_labor_codes().await.unwrap();
+        assert!(list.is_empty());
+    }
+
+    // ---- Hour Types ----
+
+    #[sqlx::test(migrator = "crate::db::MIGRATOR")]
+    async fn create_hour_type_returns_new_record(pool: sqlx::SqlitePool) {
+        let repo = Repository::new(&pool);
+        let result = repo.create_hour_type(&CreateHourType { code: "REG".into(), name: "Regular".into() }).await.unwrap();
+        assert_eq!(result.code, "REG");
+        assert_eq!(result.name, "Regular");
+    }
+
+    #[sqlx::test(migrator = "crate::db::MIGRATOR")]
+    async fn list_hour_types_ordered_by_code(pool: sqlx::SqlitePool) {
+        let repo = Repository::new(&pool);
+        repo.create_hour_type(&CreateHourType { code: "OVT".into(), name: "Overtime".into() }).await.unwrap();
+        repo.create_hour_type(&CreateHourType { code: "REG".into(), name: "Regular".into() }).await.unwrap();
+        let list = repo.list_hour_types().await.unwrap();
+        assert_eq!(list[0].code, "OVT");
+        assert_eq!(list[1].code, "REG");
     }
 }

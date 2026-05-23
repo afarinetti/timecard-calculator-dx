@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO labor_codes (wbs_number, name) VALUES ($1, $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "ec6e7cb5da745346e8e96be4ad20f9bc63e998162a2f7a5ec738b13e2e788039"
+}
