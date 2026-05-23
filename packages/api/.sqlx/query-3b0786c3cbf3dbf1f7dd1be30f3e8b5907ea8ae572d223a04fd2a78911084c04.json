@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM timecard_entries WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "3b0786c3cbf3dbf1f7dd1be30f3e8b5907ea8ae572d223a04fd2a78911084c04"
+}

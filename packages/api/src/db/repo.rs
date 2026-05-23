@@ -130,6 +130,125 @@ impl<'a> Repository<'a> {
             .await?;
         Ok(())
     }
+
+    // --- Timecard Entries ---
+
+    pub async fn list_timecard_entries(
+        &self,
+        date_from: &str,
+        date_to: &str,
+    ) -> Result<Vec<TimecardEntryView>, sqlx::Error> {
+        let rows = sqlx::query_as!(
+            TimecardEntryRow,
+            r#"
+            SELECT
+                te.id as "id!: i64",
+                te.labor_code_id as "labor_code_id!: i64",
+                te.hour_type_id as "hour_type_id!: i64",
+                te.telework as "telework!: i64",
+                te.date as "date!: String",
+                te.start_time as "start_time!: String",
+                te.end_time as "end_time?: String",
+                lc.wbs_number as "wbs_number!: String",
+                lc.name AS "labor_code_name!: String",
+                ht.code AS "hour_type_code!: String",
+                ht.name AS "hour_type_name!: String"
+            FROM timecard_entries te
+            JOIN labor_codes  lc ON te.labor_code_id = lc.id
+            JOIN hour_types   ht ON te.hour_type_id  = ht.id
+            WHERE te.date >= $1 AND te.date <= $2
+            ORDER BY te.date, te.start_time
+            "#,
+            date_from,
+            date_to,
+        )
+        .fetch_all(self.pool)
+        .await?;
+        Ok(rows.into_iter().map(Self::row_to_view).collect())
+    }
+
+    pub async fn create_timecard_entry(
+        &self,
+        input: &CreateTimecardEntry,
+    ) -> Result<TimecardEntryView, sqlx::Error> {
+        let utc_start = Self::central_to_utc(&input.date, &input.start_time);
+        let utc_end = input.end_time.as_deref().map(|t| Self::central_to_utc(&input.date, t));
+        let telework: i64 = input.telework as i64;
+
+        let id = sqlx::query!(
+            "INSERT INTO timecard_entries (labor_code_id, hour_type_id, telework, date, start_time, end_time) VALUES ($1, $2, $3, $4, $5, $6)",
+            input.labor_code_id,
+            input.hour_type_id,
+            telework,
+            input.date,
+            utc_start,
+            utc_end,
+        )
+        .execute(self.pool)
+        .await?
+        .last_insert_rowid();
+
+        self.get_entry_view_by_id(id).await
+    }
+
+    pub async fn update_timecard_entry(
+        &self,
+        input: &UpdateTimecardEntry,
+    ) -> Result<TimecardEntryView, sqlx::Error> {
+        let utc_start = Self::central_to_utc(&input.date, &input.start_time);
+        let utc_end = input.end_time.as_deref().map(|t| Self::central_to_utc(&input.date, t));
+        let telework: i64 = input.telework as i64;
+
+        sqlx::query!(
+            "UPDATE timecard_entries SET labor_code_id=$1, hour_type_id=$2, telework=$3, date=$4, start_time=$5, end_time=$6, updated_at=strftime('%Y-%m-%dT%H:%M:%f','now') WHERE id=$7",
+            input.labor_code_id,
+            input.hour_type_id,
+            telework,
+            input.date,
+            utc_start,
+            utc_end,
+            input.id,
+        )
+        .execute(self.pool)
+        .await?;
+
+        self.get_entry_view_by_id(input.id).await
+    }
+
+    pub async fn delete_timecard_entry(&self, id: i64) -> Result<(), sqlx::Error> {
+        sqlx::query!("DELETE FROM timecard_entries WHERE id = $1", id)
+            .execute(self.pool)
+            .await?;
+        Ok(())
+    }
+
+    async fn get_entry_view_by_id(&self, id: i64) -> Result<TimecardEntryView, sqlx::Error> {
+        let row = sqlx::query_as!(
+            TimecardEntryRow,
+            r#"
+            SELECT
+                te.id as "id!: i64",
+                te.labor_code_id as "labor_code_id!: i64",
+                te.hour_type_id as "hour_type_id!: i64",
+                te.telework as "telework!: i64",
+                te.date as "date!: String",
+                te.start_time as "start_time!: String",
+                te.end_time as "end_time?: String",
+                lc.wbs_number as "wbs_number!: String",
+                lc.name AS "labor_code_name!: String",
+                ht.code AS "hour_type_code!: String",
+                ht.name AS "hour_type_name!: String"
+            FROM timecard_entries te
+            JOIN labor_codes  lc ON te.labor_code_id = lc.id
+            JOIN hour_types   ht ON te.hour_type_id  = ht.id
+            WHERE te.id = $1
+            "#,
+            id
+        )
+        .fetch_one(self.pool)
+        .await?;
+        Ok(Self::row_to_view(row))
+    }
 }
 
 /// Compute decimal hours rounded to nearest 15 minutes.
@@ -297,5 +416,98 @@ mod tests {
         let list = repo.list_hour_types().await.unwrap();
         assert_eq!(list[0].code, "OVT");
         assert_eq!(list[1].code, "REG");
+    }
+
+    // ---- Helpers for entry tests ----
+
+    async fn seed_lookup(pool: &sqlx::SqlitePool) -> (i64, i64) {
+        let repo = Repository::new(pool);
+        let lc = repo.create_labor_code(&CreateLaborCode { wbs_number: "WBS-T".into(), name: "Test".into() }).await.unwrap();
+        let ht = repo.create_hour_type(&CreateHourType { code: "REG".into(), name: "Regular".into() }).await.unwrap();
+        (lc.id, ht.id)
+    }
+
+    #[sqlx::test(migrator = "crate::db::MIGRATOR")]
+    async fn create_entry_returns_view_with_decimal_hours(pool: sqlx::SqlitePool) {
+        let (lc_id, ht_id) = seed_lookup(&pool).await;
+        let repo = Repository::new(&pool);
+        let entry = repo.create_timecard_entry(&CreateTimecardEntry {
+            labor_code_id: lc_id,
+            hour_type_id: ht_id,
+            telework: false,
+            date: "2026-05-21".into(),
+            start_time: "08:00".into(),
+            end_time: Some("16:00".into()),
+        })
+        .await
+        .unwrap();
+        assert_eq!(entry.date, "2026-05-21");
+        assert_eq!(entry.decimal_hours, Some(8.0));
+        assert!(!entry.telework);
+        assert_eq!(entry.wbs_number, "WBS-T");
+    }
+
+    #[sqlx::test(migrator = "crate::db::MIGRATOR")]
+    async fn create_in_progress_entry_has_null_decimal_hours(pool: sqlx::SqlitePool) {
+        let (lc_id, ht_id) = seed_lookup(&pool).await;
+        let repo = Repository::new(&pool);
+        let entry = repo.create_timecard_entry(&CreateTimecardEntry {
+            labor_code_id: lc_id,
+            hour_type_id: ht_id,
+            telework: false,
+            date: "2026-05-21".into(),
+            start_time: "08:00".into(),
+            end_time: None,
+        })
+        .await
+        .unwrap();
+        assert!(entry.decimal_hours.is_none());
+        assert!(entry.end_time.is_none());
+    }
+
+    #[sqlx::test(migrator = "crate::db::MIGRATOR")]
+    async fn list_entries_filtered_by_date_range(pool: sqlx::SqlitePool) {
+        let (lc_id, ht_id) = seed_lookup(&pool).await;
+        let repo = Repository::new(&pool);
+        for date in ["2026-05-19", "2026-05-21", "2026-05-22"] {
+            repo.create_timecard_entry(&CreateTimecardEntry {
+                labor_code_id: lc_id, hour_type_id: ht_id,
+                telework: false, date: date.into(),
+                start_time: "08:00".into(), end_time: Some("16:00".into()),
+            }).await.unwrap();
+        }
+        let results = repo.list_timecard_entries("2026-05-21", "2026-05-22").await.unwrap();
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().all(|e| e.date.as_str() >= "2026-05-21" && e.date.as_str() <= "2026-05-22"));
+    }
+
+    #[sqlx::test(migrator = "crate::db::MIGRATOR")]
+    async fn update_entry_changes_fields(pool: sqlx::SqlitePool) {
+        let (lc_id, ht_id) = seed_lookup(&pool).await;
+        let repo = Repository::new(&pool);
+        let created = repo.create_timecard_entry(&CreateTimecardEntry {
+            labor_code_id: lc_id, hour_type_id: ht_id, telework: false,
+            date: "2026-05-21".into(), start_time: "08:00".into(), end_time: Some("16:00".into()),
+        }).await.unwrap();
+        let updated = repo.update_timecard_entry(&UpdateTimecardEntry {
+            id: created.id, labor_code_id: lc_id, hour_type_id: ht_id,
+            telework: true, date: "2026-05-21".into(),
+            start_time: "09:00".into(), end_time: Some("17:00".into()),
+        }).await.unwrap();
+        assert!(updated.telework);
+        assert_eq!(updated.decimal_hours, Some(8.0));
+    }
+
+    #[sqlx::test(migrator = "crate::db::MIGRATOR")]
+    async fn delete_entry_removes_it(pool: sqlx::SqlitePool) {
+        let (lc_id, ht_id) = seed_lookup(&pool).await;
+        let repo = Repository::new(&pool);
+        let entry = repo.create_timecard_entry(&CreateTimecardEntry {
+            labor_code_id: lc_id, hour_type_id: ht_id, telework: false,
+            date: "2026-05-21".into(), start_time: "08:00".into(), end_time: Some("16:00".into()),
+        }).await.unwrap();
+        repo.delete_timecard_entry(entry.id).await.unwrap();
+        let list = repo.list_timecard_entries("2026-05-21", "2026-05-21").await.unwrap();
+        assert!(list.is_empty());
     }
 }
