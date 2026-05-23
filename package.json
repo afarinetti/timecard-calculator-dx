@@ -1,0 +1,19 @@
+{
+  "name": "timecard-calculator",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build:css": "tailwindcss -i packages/ui/assets/tailwind.css -o packages/ui/assets/app.css",
+    "watch:css": "tailwindcss -i packages/ui/assets/tailwind.css -o packages/ui/assets/app.css --watch"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.23.0",
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.0",
+    "daisyui": "^5.5.20"
+  }
+}
