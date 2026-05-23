@@ -24,6 +24,8 @@ pub fn Settings() -> Element {
     // --- Pay Period Anchor form state ---
     let mut anchor_date = use_signal(|| String::new());
 
+    let mut active_pane = use_signal(|| 0u8); // 0=PayPeriod, 1=LaborCodes, 2=HourTypes, 3=ImportExport
+
     // ---- Labor Code handlers ----
 
     let save_lc = move |_| {
@@ -211,198 +213,185 @@ pub fn Settings() -> Element {
     };
 
     rsx! {
-        div { class: "space-y-6",
-            h1 { class: "text-2xl font-bold", "Settings" }
+        div { class: "flex h-full",
 
-            // Error banner
-            if let Some(ref msg) = *error.read() {
-                div { class: "alert alert-error",
-                    span { "{msg}" }
-                    button { class: "btn btn-xs btn-ghost ml-auto", onclick: move |_| *error.write() = None, "✕" }
+            // ── Sub-nav (180px) ──
+            div { class: "w-[180px] bg-[#0d1117] border-r border-[#21262d] flex flex-col p-3 gap-0.5 flex-shrink-0",
+                p { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.08em] font-semibold px-2 mb-1.5 mt-1",
+                    "Settings"
+                }
+                for (i, label) in [(0u8, "Pay Period"), (1u8, "Labor Codes"), (2u8, "Hour Types"), (3u8, "Import / Export")] {
+                    button {
+                        class: if *active_pane.read() == i { "pd-subnav-active w-full text-left" }
+                               else { "pd-subnav-item w-full text-left" },
+                        onclick: move |_| *active_pane.write() = i,
+                        "{label}"
+                    }
                 }
             }
 
-            // --- Pay Period Anchors ---
-            div { class: "card bg-base-200 shadow",
-                div { class: "card-body",
-                    h2 { class: "card-title text-lg", "Pay Period Anchors" }
-                    p { class: "text-sm text-base-content/60 mb-3",
-                        "Each anchor starts a 2-week pay period cycle that repeats forward indefinitely."
-                    }
-                    div { class: "flex gap-2 mb-3",
-                        input {
-                            r#type: "date",
-                            class: "input input-bordered input-sm",
-                            value: "{anchor_date}",
-                            oninput: move |e| *anchor_date.write() = e.value(),
+            // ── Content pane ──
+            div { class: "flex-1 overflow-y-auto px-8 py-7",
+
+                // Error banner
+                if let Some(ref msg) = *error.read() {
+                    div { class: "alert alert-error mb-6",
+                        span { "{msg}" }
+                        button { class: "btn btn-xs btn-ghost ml-auto",
+                            onclick: move |_| *error.write() = None, "✕"
                         }
-                        button { class: "btn btn-sm btn-primary", onclick: add_anchor, "Add" }
                     }
-                    if !anchors.read().is_empty() {
-                        table { class: "table table-sm",
-                            thead { tr { th { "Start Date" } th { } } }
-                            tbody {
-                                for a in anchors.read().iter() {
-                                    tr { key: "{a.id}",
-                                        td { code { "{a.start_date}" } }
-                                        td {
-                                            button {
-                                                class: "btn btn-xs btn-ghost text-error",
-                                                onclick: { let id = a.id; move |_| remove_anchor(id) },
-                                                "Remove"
+                }
+
+                match *active_pane.read() {
+
+                    // 0: Pay Period Anchors
+                    0 => rsx! {
+                        h1 { class: "text-lg font-bold text-[#e6edf3] mb-1", "Pay Period Anchors" }
+                        p { class: "text-sm text-[#8b949e] mb-6 leading-relaxed",
+                            "Each anchor date starts a 2-week pay period cycle that repeats forward indefinitely."
+                        }
+                        // Add form card
+                        div { class: "bg-[#161b22] border border-[#21262d] rounded-lg p-4 mb-5 flex gap-3 items-end flex-wrap",
+                            div { class: "flex flex-col gap-1",
+                                label { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold", "Start Date" }
+                                input { r#type: "date", class: "input input-bordered input-sm",
+                                    value: "{anchor_date}", oninput: move |e| *anchor_date.write() = e.value() }
+                            }
+                            button { class: "btn btn-sm btn-primary", onclick: add_anchor, "Add Anchor" }
+                        }
+                        // Table (if not empty)
+                        if !anchors.read().is_empty() {
+                            table { class: "w-full border-collapse",
+                                thead { tr {
+                                    th { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold text-left pb-2 px-4 border-b border-[#21262d]", "Start Date" }
+                                    th { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold text-right pb-2 px-4 border-b border-[#21262d]", "Actions" }
+                                } }
+                                tbody {
+                                    for a in anchors.read().iter() {
+                                        tr { key: "{a.id}", class: "border-b border-[#21262d] last:border-b-0 hover:bg-[#161b2260]",
+                                            td { class: "px-4 py-3",
+                                                code { class: "font-mono text-xs text-[#8b949e] bg-[#161b22] border border-[#21262d] px-2 py-0.5 rounded", "{a.start_date}" }
+                                            }
+                                            td { class: "px-4 py-3 text-right",
+                                                button { class: "pd-action-delete", onclick: { let id = a.id; move |_| remove_anchor(id) }, "Remove" }
                                             }
                                         }
                                     }
                                 }
                             }
                         }
-                    }
-                }
-            }
+                    },
 
-            // --- Labor Codes ---
-            div { class: "card bg-base-200 shadow",
-                div { class: "card-body",
-                    h2 { class: "card-title text-lg", "Labor Codes" }
-                    div { class: "flex gap-2 mb-3 flex-wrap",
-                        input {
-                            class: "input input-bordered input-sm w-32",
-                            placeholder: "WBS Number",
-                            value: "{lc_wbs}",
-                            oninput: move |e| *lc_wbs.write() = e.value(),
+                    // 1: Labor Codes
+                    1 => rsx! {
+                        h1 { class: "text-lg font-bold text-[#e6edf3] mb-1", "Labor Codes" }
+                        p { class: "text-sm text-[#8b949e] mb-6 leading-relaxed", "WBS codes used to categorize time entries." }
+                        div { class: "bg-[#161b22] border border-[#21262d] rounded-lg p-4 mb-5 flex gap-3 items-end flex-wrap",
+                            div { class: "flex flex-col gap-1",
+                                label { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold", "WBS Number" }
+                                input { class: "input input-bordered input-sm w-32", placeholder: "WBS-1234",
+                                    value: "{lc_wbs}", oninput: move |e| *lc_wbs.write() = e.value() }
+                            }
+                            div { class: "flex flex-col gap-1 flex-1 min-w-32",
+                                label { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold", "Name" }
+                                input { class: "input input-bordered input-sm w-full", placeholder: "Overhead Admin",
+                                    value: "{lc_name}", oninput: move |e| *lc_name.write() = e.value() }
+                            }
+                            button { class: "btn btn-sm btn-primary", onclick: save_lc,
+                                if editing_lc.read().is_some() { "Update" } else { "Add" }
+                            }
+                            if editing_lc.read().is_some() {
+                                button { class: "btn btn-sm btn-ghost", onclick: cancel_lc, "Cancel" }
+                            }
                         }
-                        input {
-                            class: "input input-bordered input-sm flex-1 min-w-32",
-                            placeholder: "Name",
-                            value: "{lc_name}",
-                            oninput: move |e| *lc_name.write() = e.value(),
-                        }
-                        button {
-                            class: "btn btn-sm btn-primary",
-                            onclick: save_lc,
-                            if editing_lc.read().is_some() { "Update" } else { "Add" }
-                        }
-                        if editing_lc.read().is_some() {
-                            button { class: "btn btn-sm btn-ghost", onclick: cancel_lc, "Cancel" }
-                        }
-                    }
-                    if !labor_codes.read().is_empty() {
-                        table { class: "table table-sm",
-                            thead { tr { th { "WBS" } th { "Name" } th { } } }
-                            tbody {
-                                for lc in labor_codes.read().iter() {
-                                    tr { key: "{lc.id}",
-                                        td { code { class: "text-xs", "{lc.wbs_number}" } }
-                                        td { "{lc.name}" }
-                                        td { class: "flex gap-1",
-                                            button {
-                                                class: "btn btn-xs btn-ghost",
-                                                onclick: {
-                                                    let lc = lc.clone();
-                                                    move |_| {
-                                                        *lc_wbs.write()    = lc.wbs_number.clone();
-                                                        *lc_name.write()   = lc.name.clone();
-                                                        *editing_lc.write() = Some(lc.clone());
-                                                    }
-                                                },
-                                                "Edit"
+                        if !labor_codes.read().is_empty() {
+                            table { class: "w-full border-collapse",
+                                thead { tr {
+                                    th { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold text-left pb-2 px-4 border-b border-[#21262d]", "WBS" }
+                                    th { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold text-left pb-2 px-4 border-b border-[#21262d]", "Name" }
+                                    th { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold text-right pb-2 px-4 border-b border-[#21262d]", "Actions" }
+                                } }
+                                tbody {
+                                    for lc in labor_codes.read().iter() {
+                                        tr { key: "{lc.id}", class: "border-b border-[#21262d] last:border-b-0 hover:bg-[#161b2260]",
+                                            td { class: "px-4 py-3",
+                                                code { class: "font-mono text-xs text-[#8b949e] bg-[#161b22] border border-[#21262d] px-2 py-0.5 rounded", "{lc.wbs_number}" }
                                             }
-                                            button {
-                                                class: "btn btn-xs btn-ghost text-error",
-                                                onclick: { let id = lc.id; move |_| delete_lc(id) },
-                                                "✕"
+                                            td { class: "px-4 py-3 text-sm text-[#e6edf3] font-medium", "{lc.name}" }
+                                            td { class: "px-4 py-3 flex gap-1.5 justify-end",
+                                                button { class: "pd-action-edit", onclick: { let lc = lc.clone(); move |_| { *lc_wbs.write() = lc.wbs_number.clone(); *lc_name.write() = lc.name.clone(); *editing_lc.write() = Some(lc.clone()); } }, "Edit" }
+                                                button { class: "pd-action-delete", onclick: { let id = lc.id; move |_| delete_lc(id) }, "Delete" }
                                             }
                                         }
                                     }
                                 }
                             }
                         }
-                    }
-                }
-            }
+                    },
 
-            // --- Hour Types ---
-            div { class: "card bg-base-200 shadow",
-                div { class: "card-body",
-                    h2 { class: "card-title text-lg", "Hour Types" }
-                    div { class: "flex gap-2 mb-3 flex-wrap",
-                        input {
-                            class: "input input-bordered input-sm w-20",
-                            placeholder: "REG",
-                            value: "{ht_code}",
-                            oninput: move |e| *ht_code.write() = e.value(),
+                    // 2: Hour Types
+                    2 => rsx! {
+                        h1 { class: "text-lg font-bold text-[#e6edf3] mb-1", "Hour Types" }
+                        p { class: "text-sm text-[#8b949e] mb-6 leading-relaxed", "Classification codes for time entries (e.g. regular, overtime, holiday)." }
+                        div { class: "bg-[#161b22] border border-[#21262d] rounded-lg p-4 mb-5 flex gap-3 items-end flex-wrap",
+                            div { class: "flex flex-col gap-1",
+                                label { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold", "Code" }
+                                input { class: "input input-bordered input-sm w-20", placeholder: "REG",
+                                    value: "{ht_code}", oninput: move |e| *ht_code.write() = e.value() }
+                            }
+                            div { class: "flex flex-col gap-1 flex-1 min-w-32",
+                                label { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold", "Name" }
+                                input { class: "input input-bordered input-sm w-full", placeholder: "Regular",
+                                    value: "{ht_name}", oninput: move |e| *ht_name.write() = e.value() }
+                            }
+                            button { class: "btn btn-sm btn-primary", onclick: save_ht,
+                                if editing_ht.read().is_some() { "Update" } else { "Add" }
+                            }
+                            if editing_ht.read().is_some() {
+                                button { class: "btn btn-sm btn-ghost", onclick: cancel_ht, "Cancel" }
+                            }
                         }
-                        input {
-                            class: "input input-bordered input-sm flex-1 min-w-32",
-                            placeholder: "Name",
-                            value: "{ht_name}",
-                            oninput: move |e| *ht_name.write() = e.value(),
-                        }
-                        button {
-                            class: "btn btn-sm btn-primary",
-                            onclick: save_ht,
-                            if editing_ht.read().is_some() { "Update" } else { "Add" }
-                        }
-                        if editing_ht.read().is_some() {
-                            button { class: "btn btn-sm btn-ghost", onclick: cancel_ht, "Cancel" }
-                        }
-                    }
-                    if !hour_types.read().is_empty() {
-                        table { class: "table table-sm",
-                            thead { tr { th { "Code" } th { "Name" } th { } } }
-                            tbody {
-                                for ht in hour_types.read().iter() {
-                                    tr { key: "{ht.id}",
-                                        td { code { class: "badge badge-ghost badge-sm", "{ht.code}" } }
-                                        td { "{ht.name}" }
-                                        td { class: "flex gap-1",
-                                            button {
-                                                class: "btn btn-xs btn-ghost",
-                                                onclick: {
-                                                    let ht = ht.clone();
-                                                    move |_| {
-                                                        *ht_code.write()   = ht.code.clone();
-                                                        *ht_name.write()   = ht.name.clone();
-                                                        *editing_ht.write() = Some(ht.clone());
-                                                    }
-                                                },
-                                                "Edit"
+                        if !hour_types.read().is_empty() {
+                            table { class: "w-full border-collapse",
+                                thead { tr {
+                                    th { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold text-left pb-2 px-4 border-b border-[#21262d]", "Code" }
+                                    th { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold text-left pb-2 px-4 border-b border-[#21262d]", "Name" }
+                                    th { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold text-right pb-2 px-4 border-b border-[#21262d]", "Actions" }
+                                } }
+                                tbody {
+                                    for ht in hour_types.read().iter() {
+                                        tr { key: "{ht.id}", class: "border-b border-[#21262d] last:border-b-0 hover:bg-[#161b2260]",
+                                            td { class: "px-4 py-3",
+                                                span { class: if ht.code.to_uppercase() == "OT" { "pd-type-ot font-mono text-xs" } else { "pd-type-reg font-mono text-xs" }, "{ht.code}" }
                                             }
-                                            button {
-                                                class: "btn btn-xs btn-ghost text-error",
-                                                onclick: { let id = ht.id; move |_| delete_ht(id) },
-                                                "✕"
+                                            td { class: "px-4 py-3 text-sm text-[#e6edf3] font-medium", "{ht.name}" }
+                                            td { class: "px-4 py-3 flex gap-1.5 justify-end",
+                                                button { class: "pd-action-edit", onclick: { let ht = ht.clone(); move |_| { *ht_code.write() = ht.code.clone(); *ht_name.write() = ht.name.clone(); *editing_ht.write() = Some(ht.clone()); } }, "Edit" }
+                                                button { class: "pd-action-delete", onclick: { let id = ht.id; move |_| delete_ht(id) }, "Delete" }
                                             }
                                         }
                                     }
                                 }
                             }
                         }
-                    }
-                }
-            }
+                    },
 
-            // --- Import / Export ---
-            div { class: "card bg-base-200 shadow",
-                div { class: "card-body",
-                    h2 { class: "card-title text-lg", "Import / Export" }
-                    p { class: "text-sm text-base-content/60 mb-4",
-                        {"JSON format: { \"labor_codes\": [{\"wbs_number\":\"…\",\"name\":\"…\"}], \"hour_types\": [{\"code\":\"…\",\"name\":\"…\"}] }"}
-                    }
-                    div { class: "flex gap-3 flex-wrap items-center",
-                        // Import
-                        label { class: "btn btn-sm btn-outline",
-                            "Import JSON"
-                            input {
-                                r#type: "file",
-                                class: "hidden",
-                                accept: ".json",
-                                onchange: handle_import,
-                            }
+                    // 3: Import / Export
+                    _ => rsx! {
+                        h1 { class: "text-lg font-bold text-[#e6edf3] mb-1", "Import / Export" }
+                        p { class: "text-sm text-[#8b949e] mb-2 leading-relaxed", "Back up or restore your labor codes and hour types as a JSON file." }
+                        p { class: "text-xs text-[#8b949e] font-mono mb-6",
+                            {"{ \"labor_codes\": [...], \"hour_types\": [...] }"}
                         }
-                        // Export
-                        button { class: "btn btn-sm btn-outline", onclick: handle_export, "Export JSON" }
-                    }
+                        div { class: "flex gap-3 flex-wrap",
+                            label { class: "btn btn-sm btn-outline",
+                                "Import JSON"
+                                input { r#type: "file", class: "hidden", accept: ".json", onchange: handle_import }
+                            }
+                            button { class: "btn btn-sm btn-outline", onclick: handle_export, "Export JSON" }
+                        }
+                    },
                 }
             }
         }
