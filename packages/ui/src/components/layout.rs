@@ -14,7 +14,7 @@ pub fn Layout() -> Element {
             div { class: "w-14 bg-[#161b22] border-r border-[#21262d] flex flex-col items-center py-3 gap-1 flex-shrink-0",
 
                 // Logo mark
-                div { class: "w-7 h-7 bg-[#58a6ff] rounded-[6px] flex items-center justify-center mb-3 font-black text-[#0d1117] text-sm select-none",
+                div { class: "w-7 h-7 bg-[#58a6ff] rounded-[6px] flex items-center justify-center mb-3 font-black text-white text-sm select-none",
                     "T"
                 }
 
