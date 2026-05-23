@@ -1,10 +1,6 @@
-//! This crate contains all shared UI for the workspace.
+use dioxus::prelude::*;
 
-mod hero;
-pub use hero::Hero;
-
-mod navbar;
-pub use navbar::Navbar;
-
-mod echo;
-pub use echo::Echo;
+#[component]
+pub fn App() -> Element {
+    rsx! { div { "Timecard Calc — loading..." } }
+}
