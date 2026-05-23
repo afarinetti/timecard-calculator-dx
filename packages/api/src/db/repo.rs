@@ -222,6 +222,90 @@ impl<'a> Repository<'a> {
         Ok(())
     }
 
+    // --- Pay Period Anchors ---
+
+    pub async fn list_pay_period_anchors(&self) -> Result<Vec<PayPeriodAnchor>, sqlx::Error> {
+        sqlx::query_as!(
+            PayPeriodAnchor,
+            r#"SELECT id as "id!: i64", start_date FROM pay_period_anchors ORDER BY start_date"#
+        )
+        .fetch_all(self.pool)
+        .await
+    }
+
+    pub async fn add_pay_period_anchor(&self, start_date: &str) -> Result<PayPeriodAnchor, sqlx::Error> {
+        let id = sqlx::query!(
+            "INSERT INTO pay_period_anchors (start_date) VALUES ($1)",
+            start_date,
+        )
+        .execute(self.pool)
+        .await?
+        .last_insert_rowid();
+
+        sqlx::query_as!(
+            PayPeriodAnchor,
+            r#"SELECT id as "id!: i64", start_date FROM pay_period_anchors WHERE id = $1"#,
+            id
+        )
+        .fetch_one(self.pool)
+        .await
+    }
+
+    pub async fn remove_pay_period_anchor(&self, id: i64) -> Result<(), sqlx::Error> {
+        sqlx::query!("DELETE FROM pay_period_anchors WHERE id = $1", id)
+            .execute(self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Pure function — no DB access. Returns sorted, deduplicated 14-day ranges
+    /// spanning ±1 year around `reference_date`, derived from `anchors`.
+    pub fn compute_pay_periods(anchors: &[PayPeriodAnchor], reference_date: &str) -> Vec<PayPeriodRange> {
+        use chrono::{Duration, NaiveDate};
+
+        let ref_date = match reference_date.parse::<NaiveDate>() {
+            Ok(d) => d,
+            Err(_) => return Vec::new(),
+        };
+        if anchors.is_empty() {
+            return Vec::new();
+        }
+
+        let window = Duration::days(365);
+        let mut periods: Vec<PayPeriodRange> = Vec::new();
+
+        for anchor in anchors {
+            let anchor_date = match anchor.start_date.parse::<NaiveDate>() {
+                Ok(d) => d,
+                Err(_) => continue,
+            };
+
+            // Walk backward from anchor
+            let mut cur = anchor_date - Duration::days(14);
+            while cur >= ref_date - window {
+                periods.push(PayPeriodRange {
+                    start_date: cur.format("%Y-%m-%d").to_string(),
+                    end_date: (cur + Duration::days(13)).format("%Y-%m-%d").to_string(),
+                });
+                cur -= Duration::days(14);
+            }
+
+            // Walk forward from anchor
+            let mut cur = anchor_date;
+            while cur <= ref_date + window {
+                periods.push(PayPeriodRange {
+                    start_date: cur.format("%Y-%m-%d").to_string(),
+                    end_date: (cur + Duration::days(13)).format("%Y-%m-%d").to_string(),
+                });
+                cur += Duration::days(14);
+            }
+        }
+
+        periods.sort_by(|a, b| a.start_date.cmp(&b.start_date));
+        periods.dedup_by_key(|p| p.start_date.clone());
+        periods
+    }
+
     async fn get_entry_view_by_id(&self, id: i64) -> Result<TimecardEntryView, sqlx::Error> {
         let row = sqlx::query_as!(
             TimecardEntryRow,
@@ -509,5 +593,62 @@ mod tests {
         repo.delete_timecard_entry(entry.id).await.unwrap();
         let list = repo.list_timecard_entries("2026-05-21", "2026-05-21").await.unwrap();
         assert!(list.is_empty());
+    }
+
+    // ---- Pay Period Anchors ----
+
+    #[sqlx::test(migrator = "crate::db::MIGRATOR")]
+    async fn add_and_list_pay_period_anchors(pool: sqlx::SqlitePool) {
+        let repo = Repository::new(&pool);
+        let a = repo.add_pay_period_anchor("2026-05-06").await.unwrap();
+        assert_eq!(a.start_date, "2026-05-06");
+        let list = repo.list_pay_period_anchors().await.unwrap();
+        assert_eq!(list.len(), 1);
+    }
+
+    #[sqlx::test(migrator = "crate::db::MIGRATOR")]
+    async fn remove_pay_period_anchor(pool: sqlx::SqlitePool) {
+        let repo = Repository::new(&pool);
+        let a = repo.add_pay_period_anchor("2026-05-06").await.unwrap();
+        repo.remove_pay_period_anchor(a.id).await.unwrap();
+        assert!(repo.list_pay_period_anchors().await.unwrap().is_empty());
+    }
+
+    // ---- compute_pay_periods (pure, no DB) ----
+
+    #[test]
+    fn compute_pay_periods_empty_anchors() {
+        let result = Repository::compute_pay_periods(&[], "2026-05-21");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn compute_pay_periods_single_anchor_contains_reference_date() {
+        let anchors = vec![PayPeriodAnchor { id: 1, start_date: "2026-05-06".into() }];
+        let periods = Repository::compute_pay_periods(&anchors, "2026-05-21");
+        assert!(!periods.is_empty());
+        let current = periods.iter().find(|p| p.start_date.as_str() <= "2026-05-21" && p.end_date.as_str() >= "2026-05-21");
+        assert!(current.is_some(), "reference date must fall in some period");
+    }
+
+    #[test]
+    fn compute_pay_periods_14_day_periods() {
+        let anchors = vec![PayPeriodAnchor { id: 1, start_date: "2026-05-06".into() }];
+        let periods = Repository::compute_pay_periods(&anchors, "2026-05-21");
+        for p in &periods {
+            use chrono::NaiveDate;
+            let start = NaiveDate::parse_from_str(&p.start_date, "%Y-%m-%d").unwrap();
+            let end = NaiveDate::parse_from_str(&p.end_date, "%Y-%m-%d").unwrap();
+            assert_eq!((end - start).num_days(), 13, "each period must be exactly 14 days");
+        }
+    }
+
+    #[test]
+    fn compute_pay_periods_are_sorted_and_unique() {
+        let anchors = vec![PayPeriodAnchor { id: 1, start_date: "2026-05-06".into() }];
+        let periods = Repository::compute_pay_periods(&anchors, "2026-05-21");
+        for w in periods.windows(2) {
+            assert!(w[0].start_date < w[1].start_date, "periods must be sorted");
+        }
     }
 }

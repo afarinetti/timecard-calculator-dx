@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO pay_period_anchors (start_date) VALUES ($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "e464f76f8219c6f24471aa8a190c5d94f90cb14d199e5b8caa1056489a686cc2"
+}

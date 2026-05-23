@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM pay_period_anchors WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "ce97f8f778c236078f16d1364276a7e0958e4951bd48641ebfad2f545d5dd02e"
+}
