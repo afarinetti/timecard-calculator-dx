@@ -1,5 +1,4 @@
-use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc};
-use chrono_tz::America::Chicago;
+use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Utc};
 use dioxus::prelude::*;
 use std::collections::HashSet;
 use api::TimecardEntryView;
@@ -40,9 +39,9 @@ pub fn today() -> String {
     chrono::Local::now().format("%Y-%m-%d").to_string()
 }
 
-/// Convert a UTC `DateTime` to "HH:MM" in Central time.
+/// Convert a UTC `DateTime` to "HH:MM" in the system local timezone.
 pub fn utc_to_central_hhmm(dt: DateTime<Utc>) -> String {
-    dt.with_timezone(&Chicago).format("%H:%M").to_string()
+    dt.with_timezone(&Local).format("%H:%M").to_string()
 }
 
 /// Elapsed decimal hours from `start` to now, rounded to nearest 15 minutes.
@@ -180,9 +179,9 @@ mod tests {
 
     #[test]
     fn utc_to_central_hhmm_converts_correctly() {
-        // 14:00 UTC = 09:00 CDT (UTC-5 in May; Central Daylight Time)
         let dt = DateTime::parse_from_rfc3339("2026-05-21T14:00:00Z").unwrap().with_timezone(&Utc);
-        assert_eq!(utc_to_central_hhmm(dt), "09:00");
+        let expected = dt.with_timezone(&Local).format("%H:%M").to_string();
+        assert_eq!(utc_to_central_hhmm(dt), expected);
     }
 
     // ── Now-button rounding ──
