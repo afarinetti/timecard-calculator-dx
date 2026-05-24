@@ -1,13 +1,14 @@
 # Timecard Calculator
 
-set shell := ["/bin/sh", "-c"]
-
 # Default recipe — list available commands
 [private]
 default:
     @just --list
 
 # ── Development ──
+
+dev:
+    dx serve --package desktop
 
 # Run clippy on all targets
 lint:
