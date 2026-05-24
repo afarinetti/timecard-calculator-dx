@@ -422,6 +422,113 @@ impl<'a> Repository<'a> {
         })
     }
 
+    // --- Entry Export / Import ---
+
+    /// Convert UTC DateTime back to Central "HH:MM" for export.
+    fn utc_to_central_hhmm(dt: DateTime<Utc>) -> String {
+        dt.with_timezone(&Chicago).format("%H:%M").to_string()
+    }
+
+    pub async fn export_entries(&self,
+    ) -> Result<ExportEntriesPayload, sqlx::Error> {
+        let rows = sqlx::query_as!(
+            TimecardEntryRow,
+            r#"
+            SELECT
+                te.id as "id!: i64",
+                te.labor_code_id as "labor_code_id!: i64",
+                te.hour_type_id as "hour_type_id!: i64",
+                te.telework as "telework!: i64",
+                te.date as "date!: NaiveDate",
+                te.start_time as "start_time!: DateTime<Utc>",
+                te.end_time as "end_time?: DateTime<Utc>",
+                lc.wbs_number as "wbs_number!: String",
+                lc.name AS "labor_code_name!: String",
+                ht.code AS "hour_type_code!: String",
+                ht.name AS "hour_type_name!: String"
+            FROM timecard_entries te
+            JOIN labor_codes  lc ON te.labor_code_id = lc.id
+            JOIN hour_types   ht ON te.hour_type_id  = ht.id
+            ORDER BY te.date, te.start_time
+            "#,
+        )
+        .fetch_all(self.pool)
+        .await?;
+
+        let entries = rows
+            .into_iter()
+            .map(|r| ExportEntry {
+                wbs_number:      r.wbs_number,
+                hour_type_code:  r.hour_type_code,
+                telework:        r.telework != 0,
+                date:            r.date.to_string(),
+                start_time:      Self::utc_to_central_hhmm(r.start_time),
+                end_time:        r.end_time.map(Self::utc_to_central_hhmm),
+            })
+            .collect();
+
+        Ok(ExportEntriesPayload { entries })
+    }
+
+    pub async fn import_entries(
+        &self,
+        entries: &[ExportEntry],
+    ) -> Result<u64, sqlx::Error> {
+        let mut tx = self.pool.begin().await?;
+        let mut count = 0u64;
+
+        for entry in entries {
+            // Resolve WBS number → labor_code_id
+            let labor_code_id: i64 = sqlx::query_as!(
+                LaborCode,
+                r#"SELECT id as "id!: i64", wbs_number, name FROM labor_codes WHERE wbs_number = $1"#,
+                entry.wbs_number,
+            )
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|_| sqlx::Error::Protocol(
+                format!("Labor code not found: {}", entry.wbs_number).into()
+            ))?
+            .id;
+
+            // Resolve hour type code → hour_type_id
+            let hour_type_id: i64 = sqlx::query_as!(
+                HourType,
+                r#"SELECT id as "id!", code, name FROM hour_types WHERE code = $1"#,
+                entry.hour_type_code,
+            )
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|_| sqlx::Error::Protocol(
+                format!("Hour type not found: {}", entry.hour_type_code).into()
+            ))?
+            .id;
+
+            let utc_start = Self::central_to_utc(&entry.date, &entry.start_time)?;
+            let utc_end = entry.end_time.as_deref()
+                .map(|t| Self::central_to_utc(&entry.date, t))
+                .transpose()?;
+            let telework: i64 = entry.telework as i64;
+
+            sqlx::query!(
+                "INSERT INTO timecard_entries (labor_code_id, hour_type_id, telework, date, start_time, end_time) VALUES ($1, $2, $3, $4, $5, $6)",
+                labor_code_id,
+                hour_type_id,
+                telework,
+                entry.date,
+                utc_start,
+                utc_end,
+            )
+            .execute(&mut *tx)
+            .await?;
+
+            count += 1;
+        }
+
+        tx.commit().await?;
+        Ok(count)
+    }
+
     async fn get_entry_view_by_id(&self, id: i64) -> Result<TimecardEntryView, sqlx::Error> {
         let row = sqlx::query_as!(
             TimecardEntryRow,

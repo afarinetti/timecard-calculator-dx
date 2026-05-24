@@ -171,3 +171,22 @@ pub struct ImportResult {
     pub imported_labor_codes: u64,
     pub imported_hour_types: u64,
 }
+
+// --- Entry Export / Import ---
+
+/// Human-readable timecard entry for export / import (uses WBS number and
+/// hour type code so the file is portable across DB instances).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportEntry {
+    pub wbs_number: String,
+    pub hour_type_code: String,
+    pub telework: bool,
+    pub date: String,           // YYYY-MM-DD
+    pub start_time: String,     // HH:MM
+    pub end_time: Option<String>, // HH:MM or None
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportEntriesPayload {
+    pub entries: Vec<ExportEntry>,
+}
