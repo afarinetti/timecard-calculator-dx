@@ -1,8 +1,8 @@
 use dioxus::prelude::*;
 use api::{PayPeriodAnchor, Repository, TimecardEntryView};
 use crate::{
-    components::{entry_form::EntryFormModal, entry_table::EntryTable},
-    utils::{navigate_date, navigate_week, today, CurrentDateSig, CurrentWeekSig},
+    components::{entry_form::EntryFormModal, entry_table::EntryTable, pivot_table::PivotTable},
+    utils::{navigate_date, navigate_week, today, date_range, CurrentDateSig, CurrentWeekSig},
 };
 
 #[derive(Clone, PartialEq)]
@@ -250,20 +250,23 @@ pub fn Dashboard() -> Element {
                         Some(Err(e)) => rsx! {
                             div { class: "alert alert-error", "{e}" }
                         },
-                        Some(Ok(summary)) => rsx! {
-                            EntryTable {
-                                entries: summary.entries.clone(),
-                                show_date: true,
-                                on_edit: move |entry: TimecardEntryView| {
-                                    *editing_entry.write() = Some(entry);
-                                    *show_form.write() = true;
-                                },
-                                on_delete: handle_delete,
-                            }
-                            div { class: "flex justify-end mt-2 text-xs text-[#8b949e]",
-                                "Total: "
-                                span { class: "text-[#e6edf3] font-mono font-bold ml-1",
-                                    "{summary.total_hours:.2} hrs"
+                        Some(Ok(summary)) => {
+                            let week = current_week();
+                            let days: Vec<String> = (0..7).map(|i| navigate_date(&week, i)).collect();
+                            rsx! {
+                                PivotTable {
+                                    entries: summary.entries.clone(),
+                                    days,
+                                    on_day_click: move |date: String| {
+                                        *current_date.write() = date;
+                                        *tab.write() = DashTab::Day;
+                                    },
+                                }
+                                div { class: "flex justify-end mt-2 text-xs text-[#8b949e]",
+                                    "Total: "
+                                    span { class: "text-[#e6edf3] font-mono font-bold ml-1",
+                                        "{summary.total_hours:.2} hrs"
+                                    }
                                 }
                             }
                         },
@@ -307,14 +310,13 @@ pub fn Dashboard() -> Element {
                                             "›"
                                         }
                                     }
-                                    EntryTable {
+                                    PivotTable {
                                         entries: summary.entries.clone(),
-                                        show_date: true,
-                                        on_edit: move |entry: TimecardEntryView| {
-                                            *editing_entry.write() = Some(entry);
-                                            *show_form.write() = true;
+                                        days: date_range(&period.start_date, &period.end_date),
+                                        on_day_click: move |date: String| {
+                                            *current_date.write() = date;
+                                            *tab.write() = DashTab::Day;
                                         },
-                                        on_delete: handle_delete,
                                     }
                                     div { class: "flex justify-end mt-2 text-xs text-[#8b949e]",
                                         "Total: "

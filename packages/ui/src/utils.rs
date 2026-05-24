@@ -23,12 +23,12 @@ pub fn navigate_week(week_start: &str, delta: i64) -> String {
     navigate_date(week_start, delta * 7)
 }
 
-/// Return the Monday of the week containing `date`.
+/// Return the Sunday of the week containing `date` (Sun–Sat week).
 pub fn week_start_for(date: &str) -> String {
     NaiveDate::parse_from_str(date, "%Y-%m-%d")
         .map(|d| {
-            let days_from_mon = d.weekday().num_days_from_monday() as i64;
-            (d - Duration::days(days_from_mon)).format("%Y-%m-%d").to_string()
+            let days_from_sun = d.weekday().num_days_from_sunday() as i64;
+            (d - Duration::days(days_from_sun)).format("%Y-%m-%d").to_string()
         })
         .unwrap_or_else(|_| date.to_string())
 }
@@ -63,12 +63,36 @@ pub fn live_elapsed_hours(utc_start: &str) -> f64 {
     }
 }
 
+/// Return a Vec of YYYY-MM-DD strings from `start` to `end` inclusive.
+pub fn date_range(start: &str, end: &str) -> Vec<String> {
+    let Ok(s) = NaiveDate::parse_from_str(start, "%Y-%m-%d") else { return vec![]; };
+    let Ok(e) = NaiveDate::parse_from_str(end,   "%Y-%m-%d") else { return vec![]; };
+    let mut dates = Vec::new();
+    let mut cur = s;
+    while cur <= e {
+        dates.push(cur.format("%Y-%m-%d").to_string());
+        cur = match cur.succ_opt() { Some(d) => d, None => break };
+    }
+    dates
+}
+
+/// Format "YYYY-MM-DD" as ("Mon", "5/20") for two-line pivot column headers.
+pub fn format_day_col(date: &str) -> (String, String) {
+    NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .map(|d| (
+            d.format("%a").to_string(),
+            format!("{}/{}", d.month(), d.day()),
+        ))
+        .unwrap_or_else(|_| (date.to_string(), String::new()))
+}
+
 /// Format "YYYY-MM-DD" as "Mon 05/20" (weekday abbreviation + month/day).
 pub fn format_day_label(date: &str) -> String {
     NaiveDate::parse_from_str(date, "%Y-%m-%d")
         .map(|d| d.format("%a %m/%d").to_string())
         .unwrap_or_else(|_| date.to_string())
 }
+
 
 fn round_to_nearest_15(minutes: u32) -> u32 {
     ((minutes + 7) / 15) * 15
@@ -127,13 +151,20 @@ mod tests {
 
     #[test]
     fn week_start_for_wednesday() {
-        // Wednesday 2026-05-20 → Monday 2026-05-18
-        assert_eq!(week_start_for("2026-05-20"), "2026-05-18");
+        // Wednesday 2026-05-20 → Sunday 2026-05-17
+        assert_eq!(week_start_for("2026-05-20"), "2026-05-17");
     }
 
     #[test]
-    fn week_start_for_monday_is_itself() {
-        assert_eq!(week_start_for("2026-05-18"), "2026-05-18");
+    fn week_start_for_sunday_is_itself() {
+        // Sunday 2026-05-17 → 2026-05-17
+        assert_eq!(week_start_for("2026-05-17"), "2026-05-17");
+    }
+
+    #[test]
+    fn week_start_for_monday() {
+        // Monday 2026-05-18 → Sunday 2026-05-17
+        assert_eq!(week_start_for("2026-05-18"), "2026-05-17");
     }
 
     #[test]
