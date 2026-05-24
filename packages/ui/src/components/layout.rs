@@ -14,7 +14,10 @@ pub fn Layout() -> Element {
             div { class: "h-11 bg-[#0d1117] border-b border-[#21262d] flex items-center px-4 gap-1 flex-shrink-0",
 
                 // App title
-                span { class: "text-sm font-semibold text-[#e6edf3] mr-3 select-none", "Timecard Calculator" }
+                div { class: "flex items-center gap-1.5 mr-3 select-none",
+                    span { class: "text-sm font-semibold text-[#e6edf3]", "Timecard Calculator" }
+                    span { class: "text-[10px] font-medium text-[#6e7681]", "v{env!(\"CARGO_PKG_VERSION\")}" }
+                }
 
                 // Dashboard nav item
                 Link {
