@@ -76,6 +76,9 @@ pub fn Dashboard() -> Element {
     let week_hrs = week_data.read().as_ref()
         .and_then(|r| r.as_ref().ok())
         .map(|s| s.total_hours.max(0.0));
+    let pp_hrs = pp_data.read().as_ref()
+        .and_then(|opt| opt.as_ref())
+        .map(|(_, summary, _, _)| summary.total_hours.max(0.0));
 
     let open_add_entry = move |_| {
         *editing_entry.write() = None;
@@ -123,10 +126,17 @@ pub fn Dashboard() -> Element {
                         p { class: "pd-stat-value text-[#8b949e]", "—" }
                     }
                 }
-                // Pay Period card (stub — no API yet)
+                // Pay Period card
                 div { class: "bg-[#161b22] border border-[#21262d] rounded-lg px-4 py-3.5",
                     p { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] mb-1.5", "Pay Period" }
-                    p { class: "pd-stat-value-ok", "—" }
+                    if let Some(h) = pp_hrs {
+                        p { class: "pd-stat-value",
+                            "{h:.1}"
+                            span { class: "text-[13px] text-[#8b949e] font-normal ml-0.5", "h" }
+                        }
+                    } else {
+                        p { class: "pd-stat-value text-[#8b949e]", "—" }
+                    }
                 }
             }
 
