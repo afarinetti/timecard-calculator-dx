@@ -235,4 +235,66 @@ mod tests {
         assert_eq!(s.len(), 5);
         assert_eq!(&s[2..3], ":");
     }
+
+    // ── Overlap detection ──
+
+    fn make_entry(id: i64, start: &str, end: Option<&str>) -> TimecardEntryView {
+        let dt = |s: &str| DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&Utc);
+        TimecardEntryView {
+            id,
+            labor_code_id: 1, hour_type_id: 1, telework: false,
+            date: NaiveDate::from_ymd_opt(2026, 5, 23).unwrap(),
+            start_time: dt(start),
+            end_time: end.map(dt),
+            decimal_hours: None,
+            wbs_number: String::new(),
+            labor_code_name: String::new(),
+            hour_type_code: String::new(),
+            hour_type_name: String::new(),
+        }
+    }
+
+    #[test]
+    fn no_overlap_returns_empty() {
+        let entries = vec![
+            make_entry(1, "2026-05-23T08:00:00Z", Some("2026-05-23T12:00:00Z")),
+            make_entry(2, "2026-05-23T13:00:00Z", Some("2026-05-23T17:00:00Z")),
+        ];
+        assert!(overlapping_ids(&entries).is_empty());
+    }
+
+    #[test]
+    fn touching_boundaries_do_not_overlap() {
+        // end of A == start of B → not an overlap
+        let entries = vec![
+            make_entry(1, "2026-05-23T08:00:00Z", Some("2026-05-23T12:00:00Z")),
+            make_entry(2, "2026-05-23T12:00:00Z", Some("2026-05-23T16:00:00Z")),
+        ];
+        assert!(overlapping_ids(&entries).is_empty());
+    }
+
+    #[test]
+    fn overlapping_entries_both_flagged() {
+        let entries = vec![
+            make_entry(1, "2026-05-23T08:00:00Z", Some("2026-05-23T12:30:00Z")),
+            make_entry(2, "2026-05-23T12:00:00Z", Some("2026-05-23T16:00:00Z")),
+        ];
+        let ids = overlapping_ids(&entries);
+        assert!(ids.contains(&1));
+        assert!(ids.contains(&2));
+    }
+
+    #[test]
+    fn midnight_spanning_overlap_detected() {
+        // The exact 5/23 case from the DB:
+        // A: 17:00Z→01:15Z(next day)  B: 01:00Z(next day)→01:30Z(next day)
+        // Overlap: 01:00–01:15 UTC
+        let entries = vec![
+            make_entry(1, "2026-05-23T17:00:00+00:00", Some("2026-05-24T01:15:00+00:00")),
+            make_entry(2, "2026-05-24T01:00:00+00:00", Some("2026-05-24T01:30:00+00:00")),
+        ];
+        let ids = overlapping_ids(&entries);
+        assert!(ids.contains(&1), "entry 1 should be flagged");
+        assert!(ids.contains(&2), "entry 2 should be flagged");
+    }
 }
