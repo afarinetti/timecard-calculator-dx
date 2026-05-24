@@ -8,32 +8,34 @@ pub fn Layout() -> Element {
     let on_set  = matches!(route, Route::Settings {});
 
     rsx! {
-        div { class: "flex h-screen bg-[#0d1117] text-[#e6edf3] overflow-hidden",
+        div { class: "flex flex-col h-screen bg-[#0d1117] text-[#e6edf3] overflow-hidden",
 
-            // ── Sidebar ──
-            div { class: "w-14 bg-[#161b22] border-r border-[#21262d] flex flex-col items-center py-3 gap-1 flex-shrink-0",
+            // ── Top bar ──
+            div { class: "h-11 bg-[#0d1117] border-b border-[#21262d] flex items-center px-4 gap-1 flex-shrink-0",
 
-                // Logo mark
-                div { class: "w-7 h-7 bg-[#58a6ff] rounded-[6px] flex items-center justify-center mb-3 font-black text-white text-sm select-none",
-                    "T"
-                }
+                // App title
+                span { class: "text-sm font-semibold text-[#e6edf3] mr-3 select-none", "Timecard Calculator" }
 
                 // Dashboard nav item
                 Link {
                     to: Route::Dashboard {},
-                    class: if on_dash { "pd-nav-active w-11 rounded-[6px] py-1.5 flex flex-col items-center gap-0.5 no-underline" }
-                           else       { "pd-nav-inactive w-11 rounded-[6px] py-1.5 flex flex-col items-center gap-0.5 no-underline hover:bg-[#21262d]" },
-                    span { class: "pd-nav-icon text-base leading-none", "⊞" }
-                    span { class: "pd-nav-label text-[9px] font-semibold uppercase tracking-wider", "Dash" }
+                    class: if on_dash {
+                        "text-sm font-medium text-[#58a6ff] px-4 py-2 border-b-2 border-[#58a6ff] -mb-px transition-colors no-underline h-11 flex items-center"
+                    } else {
+                        "text-sm font-medium text-[#8b949e] hover:text-[#e6edf3] px-4 py-2 border-b-2 border-transparent -mb-px transition-colors no-underline h-11 flex items-center"
+                    },
+                    "Dashboard"
                 }
 
                 // Settings nav item
                 Link {
                     to: Route::Settings {},
-                    class: if on_set { "pd-nav-active w-11 rounded-[6px] py-1.5 flex flex-col items-center gap-0.5 no-underline" }
-                           else      { "pd-nav-inactive w-11 rounded-[6px] py-1.5 flex flex-col items-center gap-0.5 no-underline hover:bg-[#21262d]" },
-                    span { class: "pd-nav-icon text-base leading-none", "⚙" }
-                    span { class: "pd-nav-label text-[9px] font-semibold uppercase tracking-wider", "Set" }
+                    class: if on_set {
+                        "text-sm font-medium text-[#58a6ff] px-4 py-2 border-b-2 border-[#58a6ff] -mb-px transition-colors no-underline h-11 flex items-center"
+                    } else {
+                        "text-sm font-medium text-[#8b949e] hover:text-[#e6edf3] px-4 py-2 border-b-2 border-transparent -mb-px transition-colors no-underline h-11 flex items-center"
+                    },
+                    "Settings"
                 }
             }
 

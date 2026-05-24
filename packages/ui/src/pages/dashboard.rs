@@ -1,8 +1,8 @@
 use dioxus::prelude::*;
 use api::{PayPeriodAnchor, Repository, TimecardEntryView};
-use crate::{
+    use crate::{
     components::{entry_form::EntryFormModal, entry_table::EntryTable, pivot_table::PivotTable},
-    utils::{navigate_date, navigate_week, today, date_range, CurrentDateSig, CurrentWeekSig},
+    utils::{navigate_date, navigate_week, today, week_start_for, date_range, CurrentDateSig, CurrentWeekSig},
 };
 
 #[derive(Clone, PartialEq)]
@@ -185,6 +185,11 @@ pub fn Dashboard() -> Element {
                             },
                             "›"
                         }
+                        button {
+                            class: "text-xs text-[#8b949e] px-2 py-1 border border-[#30363d] rounded-[4px] hover:border-[#58a6ff] hover:text-[#58a6ff] transition-colors",
+                            onclick: move |_| *current_week.write() = week_start_for(&today()),
+                            "This Week"
+                        }
                     }
                     if *tab.read() == DashTab::PayPeriod {
                         match pp_data.read().as_ref().and_then(|o| o.as_ref()) {
@@ -205,6 +210,11 @@ pub fn Dashboard() -> Element {
                                         disabled: !can_next,
                                         onclick: move |_| *pp_offset.write() += 1,
                                         "›"
+                                    }
+                                    button {
+                                       class: "text-xs text-[#8b949e] px-2 py-1 border border-[#30363d] rounded-[4px] hover:border-[#58a6ff] hover:text-[#58a6ff] transition-colors",
+                                       onclick: move |_| *pp_offset.write() = 0,
+                                       "This Pay Period"
                                     }
                                 }
                             },

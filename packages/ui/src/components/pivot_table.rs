@@ -164,7 +164,7 @@ pub fn PivotTable(
                             let single = if matched.len() == 1 { matched.into_iter().next() } else { None };
                             rsx! {
                                 td { key: "{day}",
-                                    class: "px-2 py-3 text-center border-b border-[#21262d]",
+                                    class: "px-2 py-2 text-center border-b border-[#21262d]",
                                     if let Some(h) = hours {
                                         button {
                                             class: "font-mono text-sm font-bold text-[#e6edf3] \
@@ -174,7 +174,12 @@ pub fn PivotTable(
                                             "{h:.1}"
                                         }
                                     } else {
-                                        span { class: "text-[#30363d] text-xs select-none", "·" }
+                                        button {
+                                            class: "text-[#30363d] hover:text-[#58a6ff] transition-colors \
+                                                    cursor-pointer px-1.5 rounded text-xs",
+                                            onclick: move |_| on_day_click.call((day.clone(), None)),
+                                            "·"
+                                        }
                                     }
                                 }
                             }
@@ -189,13 +194,13 @@ pub fn PivotTable(
                             tr { key: "{row_idx}",
                                 class: "hover:bg-[#161b2280] transition-colors",
                                 // Code cell with inline type + TW badges
-                                td { class: "px-3 py-3 border-b border-[#21262d]",
-                                    div { class: "flex flex-col gap-1",
+                                td { class: "px-3 py-2 border-b border-[#21262d]",
+                                    div { class: "flex flex-col gap-0.5",
                                         span { class: "text-[#e6edf3] text-sm", "{row.labor_code_name}" }
                                         div { class: "flex items-center gap-1",
-                                            span { class: "{ht_class}", "{row.hour_type_code}" }
+                                            span { class: "{ht_class} text-[10px]", "{row.hour_type_code}" }
                                             if row.telework {
-                                                span { class: "pd-tw-badge", "TW" }
+                                                span { class: "pd-tw-badge text-[10px] px-1 py-px", "TW" }
                                             }
                                         }
                                     }
@@ -203,7 +208,7 @@ pub fn PivotTable(
                                 // Day cells
                                 {day_cells}
                                 // Row total
-                                td { class: "px-3 py-3 text-right font-mono text-sm font-bold \
+                                td { class: "px-3 py-2 text-right font-mono text-sm font-bold \
                                              text-[#e6edf3] border-b border-[#21262d]",
                                     "{row_total:.1}"
                                 }
@@ -234,7 +239,12 @@ pub fn PivotTable(
                                             "{total:.1}"
                                         }
                                     } else {
-                                        span { class: "text-[#30363d] text-xs select-none", "·" }
+                                        button {
+                                            class: "text-[#30363d] hover:text-[#58a6ff] transition-colors \
+                                                    cursor-pointer px-1.5 rounded text-xs",
+                                            onclick: move |_| on_day_click.call((day.clone(), None)),
+                                            "·"
+                                        }
                                     }
                                 }
                             }

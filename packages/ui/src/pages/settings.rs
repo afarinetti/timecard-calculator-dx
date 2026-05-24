@@ -255,8 +255,14 @@ pub fn Settings() -> Element {
                         div { class: "bg-[#161b22] border border-[#21262d] rounded-lg p-4 mb-5 flex gap-3 items-end flex-wrap",
                             div { class: "flex flex-col gap-1",
                                 label { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold", "Start Date" }
-                                input { r#type: "date", class: "input input-bordered input-sm",
-                                    value: "{anchor_date}", oninput: move |e| *anchor_date.write() = e.value() }
+                                input {
+                                    r#type: "date",
+                                    class: "bg-[#0d1117] border border-[#30363d] rounded-[6px] px-3 py-1.5 \
+                                            text-sm text-[#e6edf3] outline-none focus:border-[#58a6ff] \
+                                            transition-colors cursor-pointer [color-scheme:dark]",
+                                    value: "{anchor_date}",
+                                    oninput: move |e| *anchor_date.write() = e.value(),
+                                }
                             }
                             button { class: "btn btn-sm btn-primary", onclick: add_anchor, "Add Anchor" }
                         }
