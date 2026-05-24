@@ -487,7 +487,7 @@ impl<'a> Repository<'a> {
             .fetch_one(&mut *tx)
             .await
             .map_err(|_| sqlx::Error::Protocol(
-                format!("Labor code not found: {}", entry.wbs_number).into()
+                format!("Labor code not found: {}", entry.wbs_number)
             ))?
             .id;
 
@@ -500,7 +500,7 @@ impl<'a> Repository<'a> {
             .fetch_one(&mut *tx)
             .await
             .map_err(|_| sqlx::Error::Protocol(
-                format!("Hour type not found: {}", entry.hour_type_code).into()
+                format!("Hour type not found: {}", entry.hour_type_code)
             ))?
             .id;
 

@@ -2,6 +2,7 @@ use dioxus::prelude::*;
 use api::{
     CreateHourType, CreateLaborCode, HourType, LaborCode,
     PayPeriodAnchor, Repository, UpdateHourType, UpdateLaborCode,
+    ExportEntriesPayload,
 };
 
 #[component]
@@ -216,6 +217,63 @@ pub fn Settings() -> Element {
         });
     };
 
+    // ---- Entry Export handler ----
+
+    let handle_export_entries = move |_| {
+        let mut err = error;
+        spawn(async move {
+            let repo = Repository::new(api::pool());
+            match repo.export_entries().await {
+                Err(e) => { *err.write() = Some(e.to_string()); }
+                Ok(payload) => {
+                    let json = match serde_json::to_string_pretty(&payload) {
+                        Ok(s) => s,
+                        Err(e) => { *err.write() = Some(e.to_string()); return; }
+                    };
+                    if let Some(path) = rfd::AsyncFileDialog::new()
+                        .set_title("Export timecard entries")
+                        .set_file_name("timecard-entries.json")
+                        .add_filter("JSON", &["json"])
+                        .save_file()
+                        .await
+                    {
+                        if let Err(e) = std::fs::write(path.path(), json.as_bytes()) {
+                            *err.write() = Some(e.to_string());
+                        }
+                    }
+                }
+            }
+        });
+    };
+
+    // ---- Entry Import handler ----
+
+    let handle_import_entries = move |e: Event<FormData>| {
+        let files = e.files();
+        let mut err = error;
+        spawn(async move {
+            if let Some(file) = files.into_iter().next() {
+                match file.read_string().await {
+                    Ok(text) => {
+                        match serde_json::from_str::<ExportEntriesPayload>(&text) {
+                            Ok(payload) => {
+                                let repo = Repository::new(api::pool());
+                                match repo.import_entries(&payload.entries).await {
+                                    Ok(count) => {
+                                        *err.write() = Some(format!("Imported {} entries.", count));
+                                    }
+                                    Err(e) => *err.write() = Some(e.to_string()),
+                                }
+                            }
+                            Err(e) => *err.write() = Some(format!("Invalid JSON: {e}")),
+                        }
+                    }
+                    Err(e) => *err.write() = Some(format!("Failed to read file: {e}")),
+                }
+            }
+        });
+    };
+
     rsx! {
         div { class: "flex h-full",
 
@@ -390,16 +448,41 @@ pub fn Settings() -> Element {
                     // 3: Import / Export
                     _ => rsx! {
                         h1 { class: "text-lg font-bold text-[#e6edf3] mb-1", "Import / Export" }
-                        p { class: "text-sm text-[#8b949e] mb-2 leading-relaxed", "Back up or restore your labor codes and hour types as a JSON file." }
-                        p { class: "text-xs text-[#8b949e] font-mono mb-6",
-                            {"{ \"labor_codes\": [...], \"hour_types\": [...] }"}
-                        }
-                        div { class: "flex gap-3 flex-wrap",
-                            label { class: "btn btn-sm btn-outline",
-                                "Import JSON"
-                                input { r#type: "file", class: "hidden", accept: ".json", onchange: handle_import }
+
+                        // ── Lookup Data ──
+                        div { class: "bg-[#161b22] border border-[#21262d] rounded-lg p-5 mb-5",
+                            h2 { class: "text-sm font-semibold text-[#e6edf3] mb-1", "Lookup Data" }
+                            p { class: "text-sm text-[#8b949e] mb-4 leading-relaxed",
+                                "Back up or restore labor codes and hour types as a JSON file."
                             }
-                            button { class: "btn btn-sm btn-outline", onclick: handle_export, "Export JSON" }
+                            p { class: "text-xs text-[#8b949e] font-mono mb-4",
+                                {"{ \"labor_codes\": [...], \"hour_types\": [...] }"}
+                            }
+                            div { class: "flex gap-3 flex-wrap",
+                                label { class: "btn btn-sm btn-outline",
+                                    "Import JSON"
+                                    input { r#type: "file", class: "hidden", accept: ".json", onchange: handle_import }
+                                }
+                                button { class: "btn btn-sm btn-outline", onclick: handle_export, "Export JSON" }
+                            }
+                        }
+
+                        // ── Time Entries ──
+                        div { class: "bg-[#161b22] border border-[#21262d] rounded-lg p-5",
+                            h2 { class: "text-sm font-semibold text-[#e6edf3] mb-1", "Time Entries" }
+                            p { class: "text-sm text-[#8b949e] mb-4 leading-relaxed",
+                                "Back up or restore timecard entries as a JSON file."
+                            }
+                            p { class: "text-xs text-[#8b949e] font-mono mb-4",
+                                {"{ \"entries\": [{ \"wbs_number\": \"...\", \"hour_type_code\": \"...\", \"telework\": false, \"date\": \"YYYY-MM-DD\", \"start_time\": \"HH:MM\", \"end_time\": \"HH:MM\" }] }"}
+                            }
+                            div { class: "flex gap-3 flex-wrap",
+                                label { class: "btn btn-sm btn-outline",
+                                    "Import JSON"
+                                    input { r#type: "file", class: "hidden", accept: ".json", onchange: handle_import_entries }
+                                }
+                                button { class: "btn btn-sm btn-outline", onclick: handle_export_entries, "Export JSON" }
+                            }
                         }
                     },
                 }
