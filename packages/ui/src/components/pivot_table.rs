@@ -113,20 +113,18 @@ pub fn PivotTable(
         .collect();
 
     // Shared TH class
-    let th = "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold \
-              px-2 py-2.5 border-b border-[#21262d] text-center whitespace-nowrap";
-    let th_left = "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold \
-                   px-3 py-2.5 border-b border-[#21262d] text-left whitespace-nowrap";
+    let th = "text-xs text-[#8b949e] uppercase tracking-[0.07em] font-semibold \
+              px-2 py-3 border-b border-[#21262d] text-center whitespace-nowrap";
+    let th_left = "text-xs text-[#8b949e] uppercase tracking-[0.07em] font-semibold \
+                   px-3 py-3 border-b border-[#21262d] text-left whitespace-nowrap max-w-[180px]";
 
     rsx! {
-        div { class: "overflow-x-auto",
+        div { class: "w-full overflow-auto",
             table { class: "w-full border border-[#21262d] rounded-lg overflow-hidden border-collapse",
                 // ── Header ─────────────────────────────────────────────
-                thead {
+                thead { class: "sticky top-0 z-10",
                     tr { class: "bg-[#161b22]",
                         th { class: "{th_left}", "Code" }
-                        th { class: "{th}", "Type" }
-                        th { class: "{th}", "TW" }
                         {visible.iter().map(|&i| {
                             let day = &days[i];
                             let (wday, mdate) = format_day_col(day);
@@ -134,7 +132,7 @@ pub fn PivotTable(
                                 th { key: "{day}", class: "{th}",
                                     div { class: "flex flex-col items-center leading-tight gap-0.5",
                                         span { "{wday}" }
-                                        span { class: "text-[9px] font-normal text-[#6e7681]", "{mdate}" }
+                                        span { class: "text-[11px] font-normal text-[#6e7681]", "{mdate}" }
                                     }
                                 }
                             }
@@ -166,12 +164,12 @@ pub fn PivotTable(
                             let single = if matched.len() == 1 { matched.into_iter().next() } else { None };
                             rsx! {
                                 td { key: "{day}",
-                                    class: "px-1 py-[9px] text-center border-b border-[#21262d]",
+                                    class: "px-2 py-3 text-center border-b border-[#21262d]",
                                     if let Some(h) = hours {
                                         button {
-                                            class: "font-mono text-xs font-bold text-[#e6edf3] \
+                                            class: "font-mono text-sm font-bold text-[#e6edf3] \
                                                     hover:text-[#58a6ff] transition-colors cursor-pointer \
-                                                    px-1 rounded",
+                                                    px-1.5 rounded",
                                             onclick: move |_| on_day_click.call((day.clone(), single.clone())),
                                             "{h:.1}"
                                         }
@@ -190,24 +188,22 @@ pub fn PivotTable(
                         rsx! {
                             tr { key: "{row_idx}",
                                 class: "hover:bg-[#161b2280] transition-colors",
-                                // Name only
-                                td { class: "px-3 py-[9px] border-b border-[#21262d]",
-                                    span { class: "text-[#e6edf3] text-xs", "{row.labor_code_name}" }
-                                }
-                                // Hour type
-                                td { class: "px-2 py-[9px] text-center border-b border-[#21262d]",
-                                    span { class: "{ht_class}", "{row.hour_type_code}" }
-                                }
-                                // Telework
-                                td { class: "px-2 py-[9px] text-center border-b border-[#21262d]",
-                                    if row.telework {
-                                        span { class: "pd-tw-badge", "TW" }
+                                // Code cell with inline type + TW badges
+                                td { class: "px-3 py-3 border-b border-[#21262d]",
+                                    div { class: "flex flex-col gap-1",
+                                        span { class: "text-[#e6edf3] text-sm", "{row.labor_code_name}" }
+                                        div { class: "flex items-center gap-1",
+                                            span { class: "{ht_class}", "{row.hour_type_code}" }
+                                            if row.telework {
+                                                span { class: "pd-tw-badge", "TW" }
+                                            }
+                                        }
                                     }
                                 }
                                 // Day cells
                                 {day_cells}
                                 // Row total
-                                td { class: "px-3 py-[9px] text-right font-mono text-xs font-bold \
+                                td { class: "px-3 py-3 text-right font-mono text-sm font-bold \
                                              text-[#e6edf3] border-b border-[#21262d]",
                                     "{row_total:.1}"
                                 }
@@ -219,9 +215,8 @@ pub fn PivotTable(
                 // ── Footer totals ───────────────────────────────────────
                 tfoot {
                     tr { class: "bg-[#161b22] border-t-2 border-[#21262d]",
-                        td { class: "px-3 py-2 text-[10px] font-semibold text-[#8b949e] \
+                        td { class: "px-3 py-2.5 text-[11px] font-semibold text-[#8b949e] \
                                      uppercase tracking-wide",
-                            colspan: "3",
                             "Total"
                         }
                         {visible.iter().map(|&i| {
@@ -229,12 +224,12 @@ pub fn PivotTable(
                             let total = col_totals[i];
                             rsx! {
                                 td { key: "{day}",
-                                    class: "px-1 py-2 text-center",
+                                    class: "px-2 py-2.5 text-center",
                                     if total > 0.0 {
                                         button {
-                                            class: "font-mono text-xs font-bold text-[#e6edf3] \
+                                            class: "font-mono text-sm font-bold text-[#e6edf3] \
                                                     hover:text-[#58a6ff] transition-colors cursor-pointer \
-                                                    px-1 rounded",
+                                                    px-1.5 rounded",
                                             onclick: move |_| on_day_click.call((day.clone(), None)),
                                             "{total:.1}"
                                         }
@@ -244,7 +239,7 @@ pub fn PivotTable(
                                 }
                             }
                         })}
-                        td { class: "px-3 py-2 text-right font-mono text-xs font-bold text-[#e6edf3]",
+                        td { class: "px-3 py-2.5 text-right font-mono text-sm font-bold text-[#e6edf3]",
                             "{grand_total:.1}"
                         }
                     }

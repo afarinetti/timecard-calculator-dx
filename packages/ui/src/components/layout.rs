@@ -38,7 +38,7 @@ pub fn Layout() -> Element {
             }
 
             // ── Main content ──
-            main { class: "flex-1 overflow-auto",
+            main { class: "flex-1 overflow-hidden flex flex-col",
                 Outlet::<Route> {}
             }
         }

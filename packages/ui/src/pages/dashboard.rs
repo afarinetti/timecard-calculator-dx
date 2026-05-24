@@ -86,7 +86,7 @@ pub fn Dashboard() -> Element {
     };
 
     rsx! {
-        div { class: "space-y-4 p-4",
+        div { class: "flex flex-col h-full p-4 gap-4 overflow-hidden",
 
             // Error banner
             if let Some(ref msg) = *error.read() {
@@ -186,6 +186,31 @@ pub fn Dashboard() -> Element {
                             "›"
                         }
                     }
+                    if *tab.read() == DashTab::PayPeriod {
+                        match pp_data.read().as_ref().and_then(|o| o.as_ref()) {
+                            Some((period, _, can_prev, can_next)) => {
+                                let can_prev = *can_prev;
+                                let can_next = *can_next;
+                                let label = format!("{} — {}", period.start_date, period.end_date);
+                                rsx! {
+                                    button {
+                                        class: "border border-[#30363d] text-[#8b949e] hover:border-[#58a6ff] hover:text-[#58a6ff] px-2.5 py-1 rounded-[5px] text-sm leading-none transition-colors disabled:opacity-30 disabled:cursor-not-allowed",
+                                        disabled: !can_prev,
+                                        onclick: move |_| *pp_offset.write() -= 1,
+                                        "‹"
+                                    }
+                                    span { class: "text-sm font-semibold text-[#e6edf3] min-w-[220px] text-center", "{label}" }
+                                    button {
+                                        class: "border border-[#30363d] text-[#8b949e] hover:border-[#58a6ff] hover:text-[#58a6ff] px-2.5 py-1 rounded-[5px] text-sm leading-none transition-colors disabled:opacity-30 disabled:cursor-not-allowed",
+                                        disabled: !can_next,
+                                        onclick: move |_| *pp_offset.write() += 1,
+                                        "›"
+                                    }
+                                }
+                            },
+                            None => rsx! {},
+                        }
+                    }
                 }
                 button {
                     class: "btn btn-primary btn-sm",
@@ -220,8 +245,10 @@ pub fn Dashboard() -> Element {
             }
 
             // Tab panels
+            div { class: "flex-1 min-h-0 flex flex-col overflow-hidden",
             match *tab.read() {
                 DashTab::Day => rsx! {
+                    div { class: "flex-1 overflow-auto min-h-0",
                     match day_data.read().as_ref() {
                         None => rsx! {
                             div { class: "flex justify-center py-8",
@@ -249,6 +276,7 @@ pub fn Dashboard() -> Element {
                             }
                         },
                     }
+                    }
                 },
                 DashTab::Week => rsx! {
                     match week_data.read().as_ref() {
@@ -264,22 +292,24 @@ pub fn Dashboard() -> Element {
                             let week = current_week();
                             let days: Vec<String> = (0..7).map(|i| navigate_date(&week, i)).collect();
                             rsx! {
-                                PivotTable {
-                                    entries: summary.entries.clone(),
-                                    days,
-                                    on_day_click: move |(date, entry): (String, Option<_>)| {
-                                        *current_date.write() = date;
-                                        *tab.write() = DashTab::Day;
-                                        if let Some(e) = entry {
-                                            *editing_entry.write() = Some(e);
-                                            *show_form.write() = true;
+                                div { class: "flex-1 overflow-auto min-h-0",
+                                    PivotTable {
+                                        entries: summary.entries.clone(),
+                                        days,
+                                        on_day_click: move |(date, entry): (String, Option<_>)| {
+                                            *current_date.write() = date;
+                                            *tab.write() = DashTab::Day;
+                                            if let Some(e) = entry {
+                                                *editing_entry.write() = Some(e);
+                                                *show_form.write() = true;
+                                            }
+                                        },
+                                    }
+                                    div { class: "flex justify-end mt-2 text-xs text-[#8b949e]",
+                                        "Total: "
+                                        span { class: "text-[#e6edf3] font-mono font-bold ml-1",
+                                            "{summary.total_hours:.2} hrs"
                                         }
-                                    },
-                                }
-                                div { class: "flex justify-end mt-2 text-xs text-[#8b949e]",
-                                    "Total: "
-                                    span { class: "text-[#e6edf3] font-mono font-bold ml-1",
-                                        "{summary.total_hours:.2} hrs"
                                     }
                                 }
                             }
@@ -304,42 +334,27 @@ pub fn Dashboard() -> Element {
                                 }
                             },
                             Some(Some((period, summary, can_prev, can_next))) => {
-                                let can_prev = *can_prev;
-                                let can_next = *can_next;
+                                let _can_prev = *can_prev;
+                                let _can_next = *can_next;
                                 rsx! {
-                                    div { class: "flex items-center gap-2 mb-3",
-                                        button {
-                                            class: "border border-[#30363d] text-[#8b949e] hover:border-[#58a6ff] hover:text-[#58a6ff] px-2.5 py-1 rounded-[5px] text-sm leading-none transition-colors disabled:opacity-30 disabled:cursor-not-allowed",
-                                            disabled: !can_prev,
-                                            onclick: move |_| *pp_offset.write() -= 1,
-                                            "‹"
+                                    div { class: "flex-1 overflow-auto min-h-0",
+                                        PivotTable {
+                                            entries: summary.entries.clone(),
+                                            days: date_range(&period.start_date, &period.end_date),
+                                            on_day_click: move |(date, entry): (String, Option<_>)| {
+                                                *current_date.write() = date;
+                                                *tab.write() = DashTab::Day;
+                                                if let Some(e) = entry {
+                                                    *editing_entry.write() = Some(e);
+                                                    *show_form.write() = true;
+                                                }
+                                            },
                                         }
-                                        span { class: "text-sm font-semibold text-[#e6edf3] min-w-[220px] text-center",
-                                            "{period.start_date} — {period.end_date}"
-                                        }
-                                        button {
-                                            class: "border border-[#30363d] text-[#8b949e] hover:border-[#58a6ff] hover:text-[#58a6ff] px-2.5 py-1 rounded-[5px] text-sm leading-none transition-colors disabled:opacity-30 disabled:cursor-not-allowed",
-                                            disabled: !can_next,
-                                            onclick: move |_| *pp_offset.write() += 1,
-                                            "›"
-                                        }
-                                    }
-                                    PivotTable {
-                                        entries: summary.entries.clone(),
-                                        days: date_range(&period.start_date, &period.end_date),
-                                        on_day_click: move |(date, entry): (String, Option<_>)| {
-                                            *current_date.write() = date;
-                                            *tab.write() = DashTab::Day;
-                                            if let Some(e) = entry {
-                                                *editing_entry.write() = Some(e);
-                                                *show_form.write() = true;
+                                        div { class: "flex justify-end mt-2 text-xs text-[#8b949e]",
+                                            "Total: "
+                                            span { class: "text-[#e6edf3] font-mono font-bold ml-1",
+                                                "{summary.total_hours:.2} hrs"
                                             }
-                                        },
-                                    }
-                                    div { class: "flex justify-end mt-2 text-xs text-[#8b949e]",
-                                        "Total: "
-                                        span { class: "text-[#e6edf3] font-mono font-bold ml-1",
-                                            "{summary.total_hours:.2} hrs"
                                         }
                                     }
                                 }
@@ -353,6 +368,7 @@ pub fn Dashboard() -> Element {
                     }
                 },
             }
+            } // end tab panel container
 
             // Entry form modal — always in RSX, show controls visibility
             EntryFormModal {

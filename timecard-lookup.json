@@ -1,0 +1,22 @@
+{
+  "labor_codes": [
+    {
+      "wbs_number": "1111",
+      "name": "ABC123"
+    },
+    {
+      "wbs_number": "2222",
+      "name": "DEF456"
+    },
+    {
+      "wbs_number": "3333",
+      "name": "GHI789"
+    }
+  ],
+  "hour_types": [
+    {
+      "code": "REG",
+      "name": "Regular"
+    }
+  ]
+}
