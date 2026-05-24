@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 use api::TimecardEntryView;
 use std::collections::HashMap;
 use chrono::{NaiveDate, Datelike, Weekday};
-use crate::utils::format_day_col;
+use crate::utils::{format_day_col, overlapping_ids};
 
 // ── Internal data structures ────────────────────────────────────────────────
 
@@ -37,7 +37,7 @@ fn build_pivot(entries: &[TimecardEntryView], days: &[String]) -> Vec<PivotRow> 
                     entry.hour_type_code.clone(),
                 ));
             }
-            *cells.entry((key, entry.date.clone())).or_default() += h;
+            *cells.entry((key, entry.date.to_string())).or_default() += h;
         }
     }
 
@@ -95,6 +95,7 @@ pub fn PivotTable(
 
     let rows      = build_pivot(&entries, &days);
     let n_days    = days.len();
+    let overlap_ids = overlapping_ids(&entries);
 
     // Per-column totals
     let col_totals: Vec<f64> = (0..n_days)
@@ -107,8 +108,7 @@ pub fn PivotTable(
         NaiveDate::parse_from_str(date, "%Y-%m-%d")
             .map(|d| matches!(d.weekday(), Weekday::Sat | Weekday::Sun))
             .unwrap_or(false)
-    };
-    let visible: Vec<usize> = (0..n_days)
+    };    let visible: Vec<usize> = (0..n_days)
         .filter(|&i| !is_weekend(&days[i]) || col_totals[i] > 0.0)
         .collect();
 
@@ -127,7 +127,9 @@ pub fn PivotTable(
                         th { class: "{th_left}", "Code" }
                         {visible.iter().map(|&i| {
                             let day = &days[i];
-                            let (wday, mdate) = format_day_col(day);
+                            let day_parsed = NaiveDate::parse_from_str(day, "%Y-%m-%d")
+                                .unwrap_or_else(|_| chrono::NaiveDate::from_ymd_opt(1970,1,1).unwrap());
+                            let (wday, mdate) = format_day_col(day_parsed);
                             rsx! {
                                 th { key: "{day}", class: "{th}",
                                     div { class: "flex flex-col items-center leading-tight gap-0.5",
@@ -150,26 +152,34 @@ pub fn PivotTable(
                         let day_cells = visible.iter().map(|&col_idx| {
                             let day = days[col_idx].clone();
                             let hours = row.cells[col_idx];
-                            // Find the single entry matching this cell, if any
+                            // Find matching entries for this cell
                             let matched: Vec<TimecardEntryView> = entries
                                 .iter()
                                 .filter(|e| {
-                                    e.date == day
+                                    e.date.to_string() == day
                                         && e.labor_code_id == lc_id
                                         && e.hour_type_id  == ht_id
                                         && e.telework      == tw
                                 })
                                 .cloned()
                                 .collect();
+                            let cell_overlaps = matched.iter().any(|e| overlap_ids.contains(&e.id));
                             let single = if matched.len() == 1 { matched.into_iter().next() } else { None };
                             rsx! {
                                 td { key: "{day}",
                                     class: "px-2 py-2 text-center border-b border-[#21262d]",
+                                    class: if cell_overlaps { "bg-red-950/30" } else { "" },
                                     if let Some(h) = hours {
                                         button {
-                                            class: "font-mono text-sm font-bold text-[#e6edf3] \
-                                                    hover:text-[#58a6ff] transition-colors cursor-pointer \
-                                                    px-1.5 rounded",
+                                            class: if cell_overlaps {
+                                                "font-mono text-sm font-bold text-red-400 \
+                                                 hover:text-red-300 transition-colors cursor-pointer \
+                                                 px-1.5 rounded"
+                                            } else {
+                                                "font-mono text-sm font-bold text-[#e6edf3] \
+                                                 hover:text-[#58a6ff] transition-colors cursor-pointer \
+                                                 px-1.5 rounded"
+                                            },
                                             onclick: move |_| on_day_click.call((day.clone(), single.clone())),
                                             "{h:.1}"
                                         }

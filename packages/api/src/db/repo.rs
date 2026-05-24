@@ -1,4 +1,4 @@
-use chrono::NaiveDateTime;
+use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use chrono_tz::America::Chicago;
 use chrono::TimeZone;
 use sqlx::SqlitePool;
@@ -30,7 +30,7 @@ impl<'a> Repository<'a> {
 
     /// Convert a `TimecardEntryRow` to a `TimecardEntryView` with computed decimal_hours.
     fn row_to_view(r: TimecardEntryRow) -> TimecardEntryView {
-        let decimal_hours = compute_decimal_hours(&r.start_time, r.end_time.as_deref());
+        let decimal_hours = compute_decimal_hours(r.start_time, r.end_time);
         TimecardEntryView {
             id: r.id,
             labor_code_id: r.labor_code_id,
@@ -146,9 +146,9 @@ impl<'a> Repository<'a> {
                 te.labor_code_id as "labor_code_id!: i64",
                 te.hour_type_id as "hour_type_id!: i64",
                 te.telework as "telework!: i64",
-                te.date as "date!: String",
-                te.start_time as "start_time!: String",
-                te.end_time as "end_time?: String",
+                te.date as "date!: NaiveDate",
+                te.start_time as "start_time!: DateTime<Utc>",
+                te.end_time as "end_time?: DateTime<Utc>",
                 lc.wbs_number as "wbs_number!: String",
                 lc.name AS "labor_code_name!: String",
                 ht.code AS "hour_type_code!: String",
@@ -348,7 +348,7 @@ impl<'a> Repository<'a> {
             let date_str = cur.format("%Y-%m-%d").to_string();
             let total_hours = entries
                 .iter()
-                .filter(|e| e.date == date_str)
+                .filter(|e| e.date.to_string() == date_str)
                 .filter_map(|e| e.decimal_hours)
                 .sum();
             result.push(DayAggregate { date: date_str, total_hours });
@@ -430,9 +430,9 @@ impl<'a> Repository<'a> {
                 te.labor_code_id as "labor_code_id!: i64",
                 te.hour_type_id as "hour_type_id!: i64",
                 te.telework as "telework!: i64",
-                te.date as "date!: String",
-                te.start_time as "start_time!: String",
-                te.end_time as "end_time?: String",
+                te.date as "date!: NaiveDate",
+                te.start_time as "start_time!: DateTime<Utc>",
+                te.end_time as "end_time?: DateTime<Utc>",
                 lc.wbs_number as "wbs_number!: String",
                 lc.name AS "labor_code_name!: String",
                 ht.code AS "hour_type_code!: String",
@@ -452,20 +452,9 @@ impl<'a> Repository<'a> {
 
 /// Compute decimal hours rounded to nearest 15 minutes.
 /// Returns `None` when `end_time` is `None` (entry in progress).
-pub fn compute_decimal_hours(start_time: &str, end_time: Option<&str>) -> Option<f64> {
+pub fn compute_decimal_hours(start_time: DateTime<Utc>, end_time: Option<DateTime<Utc>>) -> Option<f64> {
     let end = end_time?;
-
-    let parse = |s: &str| -> Option<NaiveDateTime> {
-        NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f+00:00")
-            .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%SZ"))
-            .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.fZ"))
-            .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S"))
-            .ok()
-    };
-
-    let start = parse(start_time)?;
-    let end = parse(end)?;
-    let minutes = (end - start).num_minutes() as f64;
+    let minutes = (end - start_time).num_minutes() as f64;
     if minutes < 0.0 {
         return None;
     }
@@ -476,17 +465,22 @@ pub fn compute_decimal_hours(start_time: &str, end_time: Option<&str>) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
+
+    fn dt(s: &str) -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&Utc)
+    }
 
     #[test]
     fn null_end_returns_none() {
-        assert_eq!(compute_decimal_hours("2026-05-21T07:00:00Z", None), None);
+        assert_eq!(compute_decimal_hours(dt("2026-05-21T07:00:00Z"), None), None);
     }
 
     #[test]
     fn exact_15_min_boundary() {
         // 8h 15m = 495m → 8.25
         assert_eq!(
-            compute_decimal_hours("2026-05-21T07:00:00Z", Some("2026-05-21T15:15:00Z")),
+            compute_decimal_hours(dt("2026-05-21T07:00:00Z"), Some(dt("2026-05-21T15:15:00Z"))),
             Some(8.25)
         );
     }
@@ -495,7 +489,7 @@ mod tests {
     fn rounds_up_at_8m() {
         // 8m past boundary → rounds up → 0.25
         assert_eq!(
-            compute_decimal_hours("2026-05-21T07:00:00Z", Some("2026-05-21T07:08:00Z")),
+            compute_decimal_hours(dt("2026-05-21T07:00:00Z"), Some(dt("2026-05-21T07:08:00Z"))),
             Some(0.25)
         );
     }
@@ -504,7 +498,7 @@ mod tests {
     fn rounds_down_at_7m() {
         // 7m past boundary → rounds down → 0.0
         assert_eq!(
-            compute_decimal_hours("2026-05-21T07:00:00Z", Some("2026-05-21T07:07:00Z")),
+            compute_decimal_hours(dt("2026-05-21T07:00:00Z"), Some(dt("2026-05-21T07:07:00Z"))),
             Some(0.0)
         );
     }
@@ -513,18 +507,16 @@ mod tests {
     fn rounds_up_8h12m() {
         // 8h 12m = 492m → 495m → 8.25
         assert_eq!(
-            compute_decimal_hours("2026-05-21T07:00:00Z", Some("2026-05-21T15:12:00Z")),
+            compute_decimal_hours(dt("2026-05-21T07:00:00Z"), Some(dt("2026-05-21T15:12:00Z"))),
             Some(8.25)
         );
     }
 
     #[test]
     fn rounds_down_8h7m() {
-        // 8h 7m = 487m → nearest 15-min boundary is 480m (7m below 495, 7m above 480 — ties go up, but 7 < 7.5 rounds down) → 8.0
-        // NOTE: spec had a typo using 15:08 (488m); 488/15=32.53 rounds UP to 33*15=495 → 8.25,
-        // contradicting the "rounds down" intent. Fixed to 15:07 (487m): 487/15=32.47 rounds DOWN.
+        // 8h 7m = 487m → nearest 15-min boundary is 480m → 8.0
         assert_eq!(
-            compute_decimal_hours("2026-05-21T07:00:00Z", Some("2026-05-21T15:07:00Z")),
+            compute_decimal_hours(dt("2026-05-21T07:00:00Z"), Some(dt("2026-05-21T15:07:00Z"))),
             Some(8.0)
         );
     }
@@ -533,7 +525,7 @@ mod tests {
     fn exact_half_hour() {
         // 4h 30m = 270m → 4.5
         assert_eq!(
-            compute_decimal_hours("2026-05-21T08:00:00Z", Some("2026-05-21T12:30:00Z")),
+            compute_decimal_hours(dt("2026-05-21T08:00:00Z"), Some(dt("2026-05-21T12:30:00Z"))),
             Some(4.5)
         );
     }
@@ -541,7 +533,7 @@ mod tests {
     #[test]
     fn zero_duration_rounds_to_zero() {
         assert_eq!(
-            compute_decimal_hours("2026-05-21T07:00:00Z", Some("2026-05-21T07:00:00Z")),
+            compute_decimal_hours(dt("2026-05-21T07:00:00Z"), Some(dt("2026-05-21T07:00:00Z"))),
             Some(0.0)
         );
     }
@@ -549,7 +541,7 @@ mod tests {
     #[test]
     fn end_before_start_returns_none() {
         assert_eq!(
-            compute_decimal_hours("2026-05-21T08:00:00Z", Some("2026-05-21T07:00:00Z")),
+            compute_decimal_hours(dt("2026-05-21T08:00:00Z"), Some(dt("2026-05-21T07:00:00Z"))),
             None
         );
     }
@@ -640,7 +632,7 @@ mod tests {
         })
         .await
         .unwrap();
-        assert_eq!(entry.date, "2026-05-21");
+        assert_eq!(entry.date.to_string(), "2026-05-21");
         assert_eq!(entry.decimal_hours, Some(8.0));
         assert!(!entry.telework);
         assert_eq!(entry.wbs_number, "WBS-T");
@@ -677,7 +669,7 @@ mod tests {
         }
         let results = repo.list_timecard_entries("2026-05-21", "2026-05-22").await.unwrap();
         assert_eq!(results.len(), 2);
-        assert!(results.iter().all(|e| e.date.as_str() >= "2026-05-21" && e.date.as_str() <= "2026-05-22"));
+        assert!(results.iter().all(|e| e.date.to_string().as_str() >= "2026-05-21" && e.date.to_string().as_str() <= "2026-05-22"));
     }
 
     #[sqlx::test(migrator = "crate::db::MIGRATOR")]

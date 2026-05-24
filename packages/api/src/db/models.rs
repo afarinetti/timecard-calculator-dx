@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use chrono::{DateTime, NaiveDate, Utc};
 
 // --- Labor Codes ---
 
@@ -53,9 +54,9 @@ pub struct TimecardEntryRow {
     pub labor_code_id: i64,
     pub hour_type_id: i64,
     pub telework: i64,
-    pub date: String,
-    pub start_time: String,
-    pub end_time: Option<String>,
+    pub date: NaiveDate,
+    pub start_time: DateTime<Utc>,
+    pub end_time: Option<DateTime<Utc>>,
     pub wbs_number: String,
     pub labor_code_name: String,
     pub hour_type_code: String,
@@ -69,9 +70,9 @@ pub struct TimecardEntryView {
     pub labor_code_id: i64,
     pub hour_type_id: i64,
     pub telework: bool,
-    pub date: String,
-    pub start_time: String,
-    pub end_time: Option<String>,
+    pub date: NaiveDate,
+    pub start_time: DateTime<Utc>,
+    pub end_time: Option<DateTime<Utc>>,
     pub decimal_hours: Option<f64>,
     pub wbs_number: String,
     pub labor_code_name: String,

@@ -39,8 +39,8 @@ pub fn EntryFormModal(
                 *labor_code_id.write() = e.labor_code_id.to_string();
                 *hour_type_id.write()  = e.hour_type_id.to_string();
                 *telework.write()      = e.telework;
-                *start_time.write()    = utc_to_central_hhmm(&e.start_time);
-                *end_time.write()      = e.end_time.as_deref().map(utc_to_central_hhmm).unwrap_or_default();
+                *start_time.write()    = utc_to_central_hhmm(e.start_time);
+                *end_time.write()      = e.end_time.map(utc_to_central_hhmm).unwrap_or_default();
                 *duration.write()      = e.decimal_hours.unwrap_or(8.0);
             }
             None => {

@@ -1,6 +1,8 @@
-use chrono::{Datelike, Duration, NaiveDate};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc};
 use chrono_tz::America::Chicago;
 use dioxus::prelude::*;
+use std::collections::HashSet;
+use api::TimecardEntryView;
 
 /// Newtype wrappers so that `Signal<String>` for the current date and the
 /// current week-start have distinct `TypeId`s in the Dioxus context store.
@@ -38,29 +40,15 @@ pub fn today() -> String {
     chrono::Local::now().format("%Y-%m-%d").to_string()
 }
 
-/// Convert UTC ISO 8601 timestamp to "HH:MM" in Central time.
-/// Returns "??:??" on parse failure.
-pub fn utc_to_central_hhmm(utc_iso: &str) -> String {
-    let parsed = chrono::DateTime::parse_from_rfc3339(utc_iso)
-        .or_else(|_| chrono::DateTime::parse_from_str(utc_iso, "%Y-%m-%dT%H:%M:%SZ"));
-    match parsed {
-        Ok(dt) => dt.with_timezone(&Chicago).format("%H:%M").to_string(),
-        Err(_) => "??:??".to_string(),
-    }
+/// Convert a UTC `DateTime` to "HH:MM" in Central time.
+pub fn utc_to_central_hhmm(dt: DateTime<Utc>) -> String {
+    dt.with_timezone(&Chicago).format("%H:%M").to_string()
 }
 
-/// Elapsed decimal hours from `utc_start` to now, rounded to nearest 15 minutes.
-pub fn live_elapsed_hours(utc_start: &str) -> f64 {
-    let start = chrono::DateTime::parse_from_rfc3339(utc_start)
-        .ok()
-        .map(|dt| dt.with_timezone(&chrono::Utc));
-    match start {
-        Some(s) => {
-            let mins = (chrono::Utc::now() - s).num_minutes().max(0) as f64;
-            (mins / 15.0).round() * 15.0 / 60.0
-        }
-        None => 0.0,
-    }
+/// Elapsed decimal hours from `start` to now, rounded to nearest 15 minutes.
+pub fn live_elapsed_hours(start: DateTime<Utc>) -> f64 {
+    let mins = (Utc::now() - start).num_minutes().max(0) as f64;
+    (mins / 15.0).round() * 15.0 / 60.0
 }
 
 /// Return a Vec of YYYY-MM-DD strings from `start` to `end` inclusive.
@@ -76,21 +64,14 @@ pub fn date_range(start: &str, end: &str) -> Vec<String> {
     dates
 }
 
-/// Format "YYYY-MM-DD" as ("Mon", "5/20") for two-line pivot column headers.
-pub fn format_day_col(date: &str) -> (String, String) {
-    NaiveDate::parse_from_str(date, "%Y-%m-%d")
-        .map(|d| (
-            d.format("%a").to_string(),
-            format!("{}/{}", d.month(), d.day()),
-        ))
-        .unwrap_or_else(|_| (date.to_string(), String::new()))
+/// Format a `NaiveDate` as ("Mon", "5/20") for two-line pivot column headers.
+pub fn format_day_col(date: NaiveDate) -> (String, String) {
+    (date.format("%a").to_string(), format!("{}/{}", date.month(), date.day()))
 }
 
-/// Format "YYYY-MM-DD" as "Mon 05/20" (weekday abbreviation + month/day).
-pub fn format_day_label(date: &str) -> String {
-    NaiveDate::parse_from_str(date, "%Y-%m-%d")
-        .map(|d| d.format("%a %m/%d").to_string())
-        .unwrap_or_else(|_| date.to_string())
+/// Format a `NaiveDate` as "Mon 05/20" (weekday abbreviation + month/day).
+pub fn format_day_label(date: NaiveDate) -> String {
+    date.format("%a %m/%d").to_string()
 }
 
 
@@ -118,6 +99,36 @@ pub fn end_now_hhmm() -> String {
     let adjusted = total + 15;
     let rounded = ceil_to_next_15(adjusted).min(1439);
     format!("{:02}:{:02}", rounded / 60, rounded % 60)
+}
+
+/// Returns the IDs of entries that overlap in time with at least one other entry.
+///
+/// Two entries overlap when their time intervals intersect: `a.start < b.end && b.start < a.end`.
+/// An open-ended entry (no `end_time`) is treated as extending to infinity.
+pub fn overlapping_ids(entries: &[TimecardEntryView]) -> HashSet<i64> {
+    let times: Vec<(i64, DateTime<Utc>, Option<DateTime<Utc>>)> = entries
+        .iter()
+        .map(|e| (e.id, e.start_time, e.end_time))
+        .collect();
+
+    let mut result = HashSet::new();
+    for i in 0..times.len() {
+        for j in (i + 1)..times.len() {
+            let (id_a, start_a, end_a) = times[i];
+            let (id_b, start_b, end_b) = times[j];
+            let overlaps = match (end_a, end_b) {
+                (Some(ea), Some(eb)) => start_a < eb && start_b < ea,
+                (None,     Some(eb)) => start_a < eb,
+                (Some(ea), None)     => start_b < ea,
+                (None,     None)     => true,
+            };
+            if overlaps {
+                result.insert(id_a);
+                result.insert(id_b);
+            }
+        }
+    }
+    result
 }
 
 #[cfg(test)]
@@ -170,12 +181,8 @@ mod tests {
     #[test]
     fn utc_to_central_hhmm_converts_correctly() {
         // 14:00 UTC = 09:00 CDT (UTC-5 in May; Central Daylight Time)
-        assert_eq!(utc_to_central_hhmm("2026-05-21T14:00:00Z"), "09:00");
-    }
-
-    #[test]
-    fn utc_to_central_hhmm_invalid_returns_placeholder() {
-        assert_eq!(utc_to_central_hhmm("not-a-date"), "??:??");
+        let dt = DateTime::parse_from_rfc3339("2026-05-21T14:00:00Z").unwrap().with_timezone(&Utc);
+        assert_eq!(utc_to_central_hhmm(dt), "09:00");
     }
 
     // ── Now-button rounding ──

@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use api::TimecardEntryView;
-use crate::utils::{format_day_label, utc_to_central_hhmm};
+use crate::utils::{format_day_label, overlapping_ids, utc_to_central_hhmm};
 
 #[component]
 pub fn EntryTable(
@@ -14,6 +14,8 @@ pub fn EntryTable(
             p { class: "text-[#8b949e] py-8 text-center text-sm", "No entries for this period." }
         };
     }
+
+    let overlap_ids = overlapping_ids(&entries);
 
     rsx! {
         div { class: "overflow-x-auto",
@@ -32,74 +34,84 @@ pub fn EntryTable(
                 }
                 tbody {
                     for entry in entries.iter() {
-                        tr { key: "{entry.id}",
-                            class: "border-b border-[#21262d] last:border-b-0 hover:bg-[#161b2280] transition-colors",
+                        {
+                            let is_overlap = overlap_ids.contains(&entry.id);
+                            let row_class = if is_overlap {
+                                "border-b border-[#21262d] last:border-b-0 bg-red-950/30 hover:bg-red-950/50 transition-colors"
+                            } else {
+                                "border-b border-[#21262d] last:border-b-0 hover:bg-[#161b2280] transition-colors"
+                            };
+                            let time_class = if is_overlap { "text-red-400 font-semibold" } else { "text-[#8b949e]" };
+                            rsx! {
+                                tr { key: "{entry.id}", class: "{row_class}",
 
-                            // Optional day column
-                            if show_date {
-                                td { class: "px-4 py-[11px] font-mono text-xs text-[#8b949e] whitespace-nowrap",
-                                    "{format_day_label(&entry.date)}"
-                                }
-                            }
-
-                            // Code name + optional TW badge
-                            td { class: "px-4 py-[11px]",
-                                div { class: "flex items-center gap-2",
-                                    span { class: "text-[#e6edf3] font-medium text-sm", "{entry.labor_code_name}" }
-                                    if entry.telework {
-                                        span { class: "pd-tw-badge", "TW" }
+                                    // Optional day column
+                                    if show_date {
+                                        td { class: "px-4 py-[11px] font-mono text-xs text-[#8b949e] whitespace-nowrap",
+                                            "{format_day_label(entry.date)}"
+                                        }
                                     }
-                                }
-                            }
 
-                            // Hour type — color coded
-                            td { class: "px-4 py-[11px]",
-                                span {
-                                    class: if entry.hour_type_code.to_uppercase() == "OT" { "pd-type-ot font-mono text-xs" }
-                                           else { "pd-type-reg font-mono text-xs" },
-                                    "{entry.hour_type_code}"
-                                }
-                            }
-
-                            // Start → End
-                            td { class: "px-4 py-[11px] font-mono text-xs text-[#8b949e]",
-                                if let Some(ref end) = entry.end_time {
-                                    "{utc_to_central_hhmm(&entry.start_time)} → {utc_to_central_hhmm(end)}"
-                                } else {
-                                    div { class: "flex items-center gap-2",
-                                        span { "{utc_to_central_hhmm(&entry.start_time)} →" }
-                                        span { class: "pd-in-progress", "In Progress" }
+                                    // Code name + optional TW badge
+                                    td { class: "px-4 py-[11px]",
+                                        div { class: "flex items-center gap-2",
+                                            span { class: "text-[#e6edf3] font-medium text-sm", "{entry.labor_code_name}" }
+                                            if entry.telework {
+                                                span { class: "pd-tw-badge", "TW" }
+                                            }
+                                        }
                                     }
-                                }
-                            }
 
-                            // Hours
-                            td { class: "px-4 py-[11px] font-mono text-sm font-bold",
-                                if let Some(h) = entry.decimal_hours {
-                                    span { class: "text-[#e6edf3]", "{h:.2}" }
-                                } else {
-                                    span { class: "text-[#8b949e]", "—" }
-                                }
-                            }
-
-                            // Actions — always visible
-                            td { class: "px-4 py-[11px]",
-                                div { class: "flex gap-1.5 justify-end",
-                                    button {
-                                        class: "pd-action-edit",
-                                        onclick: {
-                                            let entry = entry.clone();
-                                            move |_| on_edit.call(entry.clone())
-                                        },
-                                        "Edit"
+                                    // Hour type — color coded
+                                    td { class: "px-4 py-[11px]",
+                                        span {
+                                            class: if entry.hour_type_code.to_uppercase() == "OT" { "pd-type-ot font-mono text-xs" }
+                                                   else { "pd-type-reg font-mono text-xs" },
+                                            "{entry.hour_type_code}"
+                                        }
                                     }
-                                    button {
-                                        class: "pd-action-delete",
-                                        onclick: {
-                                            let id = entry.id;
-                                            move |_| on_delete.call(id)
-                                        },
-                                        "Delete"
+
+                                    // Start → End — red if overlapping
+                                    td { class: "px-4 py-[11px] font-mono text-xs whitespace-nowrap {time_class}",
+                                        if let Some(end) = entry.end_time {
+                                            "{utc_to_central_hhmm(entry.start_time)} → {utc_to_central_hhmm(end)}"
+                                        } else {
+                                            div { class: "flex items-center gap-2",
+                                                span { "{utc_to_central_hhmm(entry.start_time)} →" }
+                                                span { class: "pd-in-progress", "In Progress" }
+                                            }
+                                        }
+                                    }
+
+                                    // Hours
+                                    td { class: "px-4 py-[11px] font-mono text-sm font-bold",
+                                        if let Some(h) = entry.decimal_hours {
+                                            span { class: "text-[#e6edf3]", "{h:.2}" }
+                                        } else {
+                                            span { class: "text-[#8b949e]", "—" }
+                                        }
+                                    }
+
+                                    // Actions — always visible
+                                    td { class: "px-4 py-[11px]",
+                                        div { class: "flex gap-1.5 justify-end",
+                                            button {
+                                                class: "pd-action-edit",
+                                                onclick: {
+                                                    let entry = entry.clone();
+                                                    move |_| on_edit.call(entry.clone())
+                                                },
+                                                "Edit"
+                                            }
+                                            button {
+                                                class: "pd-action-delete",
+                                                onclick: {
+                                                    let id = entry.id;
+                                                    move |_| on_delete.call(id)
+                                                },
+                                                "Delete"
+                                            }
+                                        }
                                     }
                                 }
                             }

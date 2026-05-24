@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n            SELECT\n                te.id as \"id!: i64\",\n                te.labor_code_id as \"labor_code_id!: i64\",\n                te.hour_type_id as \"hour_type_id!: i64\",\n                te.telework as \"telework!: i64\",\n                te.date as \"date!: String\",\n                te.start_time as \"start_time!: String\",\n                te.end_time as \"end_time?: String\",\n                lc.wbs_number as \"wbs_number!: String\",\n                lc.name AS \"labor_code_name!: String\",\n                ht.code AS \"hour_type_code!: String\",\n                ht.name AS \"hour_type_name!: String\"\n            FROM timecard_entries te\n            JOIN labor_codes  lc ON te.labor_code_id = lc.id\n            JOIN hour_types   ht ON te.hour_type_id  = ht.id\n            WHERE te.date >= $1 AND te.date <= $2\n            ORDER BY te.date, te.start_time\n            ",
+  "query": "\n            SELECT\n                te.id as \"id!: i64\",\n                te.labor_code_id as \"labor_code_id!: i64\",\n                te.hour_type_id as \"hour_type_id!: i64\",\n                te.telework as \"telework!: i64\",\n                te.date as \"date!: NaiveDate\",\n                te.start_time as \"start_time!: DateTime<Utc>\",\n                te.end_time as \"end_time?: DateTime<Utc>\",\n                lc.wbs_number as \"wbs_number!: String\",\n                lc.name AS \"labor_code_name!: String\",\n                ht.code AS \"hour_type_code!: String\",\n                ht.name AS \"hour_type_name!: String\"\n            FROM timecard_entries te\n            JOIN labor_codes  lc ON te.labor_code_id = lc.id\n            JOIN hour_types   ht ON te.hour_type_id  = ht.id\n            WHERE te.date >= $1 AND te.date <= $2\n            ORDER BY te.date, te.start_time\n            ",
   "describe": {
     "columns": [
       {
@@ -24,17 +24,17 @@
         "type_info": "Integer"
       },
       {
-        "name": "date!: String",
+        "name": "date!: NaiveDate",
         "ordinal": 4,
         "type_info": "Text"
       },
       {
-        "name": "start_time!: String",
+        "name": "start_time!: DateTime<Utc>",
         "ordinal": 5,
         "type_info": "Text"
       },
       {
-        "name": "end_time?: String",
+        "name": "end_time?: DateTime<Utc>",
         "ordinal": 6,
         "type_info": "Text"
       },
@@ -76,5 +76,5 @@
       false
     ]
   },
-  "hash": "917296d2d9d96c9f50df7e8f1c8edf976dd54efc1984b4ebd1c28f6b7076eb22"
+  "hash": "da8c7ca502e7b474cccf1ef0289d8a9a3d666f4117146efc77571a64a5136ef4"
 }
