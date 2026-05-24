@@ -36,11 +36,7 @@ pub fn EntryTable(
                     for entry in entries.iter() {
                         {
                             let is_overlap = overlap_ids.contains(&entry.id);
-                            let row_class = if is_overlap {
-                                "border-b border-[#21262d] last:border-b-0 bg-red-950/30 hover:bg-red-950/50 transition-colors"
-                            } else {
-                                "border-b border-[#21262d] last:border-b-0 hover:bg-[#161b2280] transition-colors"
-                            };
+                            let row_class = "border-b border-[#21262d] last:border-b-0 hover:bg-[#161b2280] transition-colors";
                             let time_class = if is_overlap { "text-red-400 font-semibold" } else { "text-[#8b949e]" };
                             rsx! {
                                 tr { key: "{entry.id}", class: "{row_class}",
