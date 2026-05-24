@@ -106,7 +106,7 @@ pub fn Dashboard() -> Element {
                 div { class: "bg-[#161b22] border border-[#21262d] rounded-lg px-4 py-3.5",
                     p { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] mb-1.5", "Today" }
                     if let Some(h) = today_hrs {
-                        p { class: "pd-stat-value",
+                        p { class: if h > 8.0 { "pd-stat-value-ok" } else { "pd-stat-value" },
                             "{h:.1}"
                             span { class: "text-[13px] text-[#8b949e] font-normal ml-0.5", "h" }
                         }
@@ -118,7 +118,7 @@ pub fn Dashboard() -> Element {
                 div { class: "bg-[#161b22] border border-[#21262d] rounded-lg px-4 py-3.5",
                     p { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] mb-1.5", "This Week" }
                     if let Some(h) = week_hrs {
-                        p { class: "pd-stat-value",
+                        p { class: if h > 40.0 { "pd-stat-value-ok" } else { "pd-stat-value" },
                             "{h:.1}"
                             span { class: "text-[13px] text-[#8b949e] font-normal ml-0.5", "h" }
                         }
@@ -130,7 +130,7 @@ pub fn Dashboard() -> Element {
                 div { class: "bg-[#161b22] border border-[#21262d] rounded-lg px-4 py-3.5",
                     p { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] mb-1.5", "Pay Period" }
                     if let Some(h) = pp_hrs {
-                        p { class: "pd-stat-value",
+                        p { class: if h > 80.0 { "pd-stat-value-ok" } else { "pd-stat-value" },
                             "{h:.1}"
                             span { class: "text-[13px] text-[#8b949e] font-normal ml-0.5", "h" }
                         }
