@@ -11,3 +11,5 @@
 # app.css is committed so the desktop app works without a separate npm build step.
 # Rebuild it with: pnpm run build:css
 # packages/ui/assets/app.css
+.superpowers/
+node_modules/

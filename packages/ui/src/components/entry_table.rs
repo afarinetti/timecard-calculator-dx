@@ -1,10 +1,11 @@
 use dioxus::prelude::*;
 use api::TimecardEntryView;
-use crate::utils::utc_to_central_hhmm;
+use crate::utils::{format_day_label, utc_to_central_hhmm};
 
 #[component]
 pub fn EntryTable(
     entries: Vec<TimecardEntryView>,
+    show_date: bool,
     on_edit: EventHandler<TimecardEntryView>,
     on_delete: EventHandler<i64>,
 ) -> Element {
@@ -19,6 +20,9 @@ pub fn EntryTable(
             table { class: "w-full border border-[#21262d] rounded-lg overflow-hidden border-collapse",
                 thead {
                     tr { class: "bg-[#161b22]",
+                        if show_date {
+                            th { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold text-left px-4 py-2.5 border-b border-[#21262d]", "Day" }
+                        }
                         th { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold text-left px-4 py-2.5 border-b border-[#21262d]", "Code" }
                         th { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold text-left px-4 py-2.5 border-b border-[#21262d]", "Type" }
                         th { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold text-left px-4 py-2.5 border-b border-[#21262d]", "Start → End" }
@@ -30,6 +34,13 @@ pub fn EntryTable(
                     for entry in entries.iter() {
                         tr { key: "{entry.id}",
                             class: "border-b border-[#21262d] last:border-b-0 hover:bg-[#161b2280] transition-colors",
+
+                            // Optional day column
+                            if show_date {
+                                td { class: "px-4 py-[11px] font-mono text-xs text-[#8b949e] whitespace-nowrap",
+                                    "{format_day_label(&entry.date)}"
+                                }
+                            }
 
                             // Code name + optional TW badge
                             td { class: "px-4 py-[11px]",

@@ -10,8 +10,8 @@ enum EntryMode { TimeInputs, Duration }
 
 #[component]
 pub fn EntryFormModal(
-    show: bool,
-    editing: Option<TimecardEntryView>,
+    show: ReadSignal<bool>,
+    editing: ReadSignal<Option<TimecardEntryView>>,
     date: String,
     on_close: EventHandler,
     on_saved: EventHandler,
@@ -23,35 +23,46 @@ pub fn EntryFormModal(
     let mut labor_code_id = use_signal(|| String::new());
     let mut hour_type_id  = use_signal(|| String::new());
     let mut telework      = use_signal(|| false);
-    let mut start_time    = use_signal(|| "08:00".to_string());
-    let mut end_time      = use_signal(|| "17:00".to_string());
+    let mut start_time    = use_signal(|| String::new());
+    let mut end_time      = use_signal(|| String::new());
     let mut duration      = use_signal(|| 8.0f64);
     let mut error         = use_signal(|| Option::<String>::None);
 
-    // Populate fields when the drawer opens or the editing target changes
-    let editing_for_effect = editing.clone();
+    // Populate fields when the drawer opens or the editing target changes.
+    // Both `show` and `editing` are ReadOnlySignal so the effect re-runs whenever
+    // either changes — e.g. switching from "add" to "edit" or opening the form
+    // for a different entry.
     use_effect(move || {
-        if let Some(ref e) = editing_for_effect {
-            *labor_code_id.write() = e.labor_code_id.to_string();
-            *hour_type_id.write()  = e.hour_type_id.to_string();
-            *telework.write()      = e.telework;
-            *start_time.write()    = utc_to_central_hhmm(&e.start_time);
-            *end_time.write()      = e.end_time.as_deref().map(utc_to_central_hhmm).unwrap_or_default();
-            *duration.write()      = e.decimal_hours.unwrap_or(8.0);
-        } else {
-            *labor_code_id.write() = String::new();
-            *hour_type_id.write()  = String::new();
-            *telework.write()      = false;
-            *start_time.write()    = "08:00".to_string();
-            *end_time.write()      = "17:00".to_string();
-            *duration.write()      = 8.0;
+        let _ = show();  // track open/close
+        match editing() {
+            Some(e) => {
+                *labor_code_id.write() = e.labor_code_id.to_string();
+                *hour_type_id.write()  = e.hour_type_id.to_string();
+                *telework.write()      = e.telework;
+                *start_time.write()    = utc_to_central_hhmm(&e.start_time);
+                *end_time.write()      = e.end_time.as_deref().map(utc_to_central_hhmm).unwrap_or_default();
+                *duration.write()      = e.decimal_hours.unwrap_or(8.0);
+            }
+            None => {
+                *labor_code_id.write() = String::new();
+                // Default hour type to REG if available
+                let reg_id = hour_types.read().iter()
+                    .find(|ht| ht.code.eq_ignore_ascii_case("REG"))
+                    .map(|ht| ht.id.to_string())
+                    .unwrap_or_default();
+                *hour_type_id.write()  = reg_id;
+                *telework.write()      = false;
+                *start_time.write()    = String::new();
+                *end_time.write()      = String::new();
+                *duration.write()      = 8.0;
+            }
         }
         *mode.write()  = EntryMode::TimeInputs;
         *error.write() = None;
     });
 
     // All hooks above; early return below is safe
-    if !show {
+    if !show() {
         return rsx! { div {} };
     }
 
@@ -65,8 +76,7 @@ pub fn EntryFormModal(
         Some(format!("{:02}:{:02}", total / 60, total % 60))
     };
 
-    let editing_for_submit = editing.clone();
-    let date_for_submit    = date.clone();
+    let date_for_submit = date.clone();
     let handle_submit = move |_| {
         let lc_id: i64 = match labor_code_id.read().parse() {
             Ok(v) => v,
@@ -87,7 +97,7 @@ pub fn EntryFormModal(
             EntryMode::Duration => end_from_duration(&start, *duration.read()),
         };
 
-        let editing_val = editing_for_submit.clone();
+        let editing_val = editing();
         let date_val    = date_for_submit.clone();
         let tw          = *telework.read();
         let mut err     = error;
@@ -117,7 +127,7 @@ pub fn EntryFormModal(
         });
     };
 
-    let is_editing = editing.is_some();
+    let is_editing = editing().is_some();
 
     rsx! {
         div { class: "fixed inset-0 z-50 flex",
@@ -131,8 +141,11 @@ pub fn EntryFormModal(
             div { class: "w-80 bg-[#161b22] border-l border-[#30363d] flex flex-col",
                 // ── Header ──────────────────────────────────────────────
                 div { class: "flex-shrink-0 flex items-center justify-between px-5 py-4 border-b border-[#30363d]",
-                    span { class: "text-sm font-semibold text-[#e6edf3]",
-                        if is_editing { "Edit Entry" } else { "New Entry" }
+                    div { class: "flex flex-col gap-0.5",
+                        span { class: "text-sm font-semibold text-[#e6edf3]",
+                            if is_editing { "Edit Entry" } else { "New Entry" }
+                        }
+                        span { class: "text-xs text-[#8b949e]", "{date}" }
                     }
                     button {
                         r#type: "button",

@@ -1,8 +1,8 @@
 use dioxus::prelude::*;
-use api::{Repository, TimecardEntryView};
+use api::{PayPeriodAnchor, Repository, TimecardEntryView};
 use crate::{
     components::{entry_form::EntryFormModal, entry_table::EntryTable},
-    utils::{navigate_date, navigate_week, today},
+    utils::{navigate_date, navigate_week, today, CurrentDateSig, CurrentWeekSig},
 };
 
 #[derive(Clone, PartialEq)]
@@ -10,31 +10,52 @@ enum DashTab { Day, Week, PayPeriod, History }
 
 #[component]
 pub fn Dashboard() -> Element {
-    let mut current_date = use_context::<Signal<String>>();
-    let mut current_week = use_context::<Signal<String>>();
+    let mut current_date = use_context::<CurrentDateSig>().0;
+    let mut current_week = use_context::<CurrentWeekSig>().0;
+    let anchors          = use_context::<Signal<Vec<PayPeriodAnchor>>>();
 
     let mut tab           = use_signal(|| DashTab::Day);
     let mut show_form     = use_signal(|| false);
     let mut editing_entry = use_signal(|| Option::<TimecardEntryView>::None);
     let mut error         = use_signal(|| Option::<String>::None);
     let mut reload        = use_signal(|| 0u32);
+    let mut pp_offset     = use_signal(|| 0i32);
 
     // Day data — re-fetches when current_date or reload changes
-    let day_data = use_resource(move || {
-        let date = current_date.read().clone();
+    let day_data = use_resource(move || async move {
+        let date = current_date();
         let _r   = reload();
-        async move {
-            Repository::new(api::pool()).get_day_summary(&date).await
-        }
+        Repository::new(api::pool()).get_day_summary(&date).await
     });
 
     // Week data
-    let week_data = use_resource(move || {
-        let week = current_week.read().clone();
+    let week_data = use_resource(move || async move {
+        let week = current_week();
         let _r   = reload();
-        async move {
-            Repository::new(api::pool()).get_week_summary(&week).await
-        }
+        Repository::new(api::pool()).get_week_summary(&week).await
+    });
+
+    // Pay period data — recomputes when anchors, current_date, pp_offset, or reload change
+    let pp_data = use_resource(move || async move {
+        let anchors_val = anchors();
+        let date        = current_date();
+        let offset      = pp_offset();
+        let _r          = reload();
+        if anchors_val.is_empty() { return None; }
+        let periods = Repository::compute_pay_periods(&anchors_val, &date);
+        if periods.is_empty() { return None; }
+        let base_idx = periods.iter()
+            .position(|p| p.start_date <= date && p.end_date >= date)
+            .unwrap_or_else(|| periods.len().saturating_sub(1));
+        let target_idx = ((base_idx as i32) + offset)
+            .clamp(0, (periods.len() as i32) - 1) as usize;
+        let can_prev = target_idx > 0;
+        let can_next = target_idx < periods.len() - 1;
+        let period = periods[target_idx].clone();
+        let summary = Repository::new(api::pool())
+            .get_pay_period_summary(&period.start_date, &period.end_date)
+            .await.ok()?;
+        Some((period, summary, can_prev, can_next))
     });
 
     let mut refresh = move || *reload.write() += 1;
@@ -51,10 +72,10 @@ pub fn Dashboard() -> Element {
     // Derive stat values before rsx! so borrows drop
     let today_hrs = day_data.read().as_ref()
         .and_then(|r| r.as_ref().ok())
-        .map(|s| s.total_hours);
+        .map(|s| s.total_hours.max(0.0));
     let week_hrs = week_data.read().as_ref()
         .and_then(|r| r.as_ref().ok())
-        .map(|s| s.total_hours);
+        .map(|s| s.total_hours.max(0.0));
 
     let open_add_entry = move |_| {
         *editing_entry.write() = None;
@@ -62,7 +83,7 @@ pub fn Dashboard() -> Element {
     };
 
     rsx! {
-        div { class: "space-y-4",
+        div { class: "space-y-4 p-4",
 
             // Error banner
             if let Some(ref msg) = *error.read() {
@@ -203,6 +224,7 @@ pub fn Dashboard() -> Element {
                         Some(Ok(summary)) => rsx! {
                             EntryTable {
                                 entries: summary.entries.clone(),
+                                show_date: false,
                                 on_edit: move |entry: TimecardEntryView| {
                                     *editing_entry.write() = Some(entry);
                                     *show_form.write() = true;
@@ -231,6 +253,7 @@ pub fn Dashboard() -> Element {
                         Some(Ok(summary)) => rsx! {
                             EntryTable {
                                 entries: summary.entries.clone(),
+                                show_date: true,
                                 on_edit: move |entry: TimecardEntryView| {
                                     *editing_entry.write() = Some(entry);
                                     *show_form.write() = true;
@@ -247,8 +270,61 @@ pub fn Dashboard() -> Element {
                     }
                 },
                 DashTab::PayPeriod => rsx! {
-                    div { class: "text-[#8b949e] py-10 text-center text-sm",
-                        "Configure pay period anchors in Settings to enable this view."
+                    if anchors.read().is_empty() {
+                        div { class: "text-[#8b949e] py-10 text-center text-sm",
+                            "Configure pay period anchors in Settings to enable this view."
+                        }
+                    } else {
+                        match pp_data.read().as_ref() {
+                            None => rsx! {
+                                div { class: "flex justify-center py-8",
+                                    span { class: "loading loading-spinner" }
+                                }
+                            },
+                            Some(None) => rsx! {
+                                div { class: "text-[#8b949e] py-10 text-center text-sm",
+                                    "No pay period found for the current date."
+                                }
+                            },
+                            Some(Some((period, summary, can_prev, can_next))) => {
+                                let can_prev = *can_prev;
+                                let can_next = *can_next;
+                                rsx! {
+                                    div { class: "flex items-center gap-2 mb-3",
+                                        button {
+                                            class: "border border-[#30363d] text-[#8b949e] hover:border-[#58a6ff] hover:text-[#58a6ff] px-2.5 py-1 rounded-[5px] text-sm leading-none transition-colors disabled:opacity-30 disabled:cursor-not-allowed",
+                                            disabled: !can_prev,
+                                            onclick: move |_| *pp_offset.write() -= 1,
+                                            "‹"
+                                        }
+                                        span { class: "text-sm font-semibold text-[#e6edf3] min-w-[220px] text-center",
+                                            "{period.start_date} — {period.end_date}"
+                                        }
+                                        button {
+                                            class: "border border-[#30363d] text-[#8b949e] hover:border-[#58a6ff] hover:text-[#58a6ff] px-2.5 py-1 rounded-[5px] text-sm leading-none transition-colors disabled:opacity-30 disabled:cursor-not-allowed",
+                                            disabled: !can_next,
+                                            onclick: move |_| *pp_offset.write() += 1,
+                                            "›"
+                                        }
+                                    }
+                                    EntryTable {
+                                        entries: summary.entries.clone(),
+                                        show_date: true,
+                                        on_edit: move |entry: TimecardEntryView| {
+                                            *editing_entry.write() = Some(entry);
+                                            *show_form.write() = true;
+                                        },
+                                        on_delete: handle_delete,
+                                    }
+                                    div { class: "flex justify-end mt-2 text-xs text-[#8b949e]",
+                                        "Total: "
+                                        span { class: "text-[#e6edf3] font-mono font-bold ml-1",
+                                            "{summary.total_hours:.2} hrs"
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 },
                 DashTab::History => rsx! {
@@ -260,8 +336,8 @@ pub fn Dashboard() -> Element {
 
             // Entry form modal — always in RSX, show controls visibility
             EntryFormModal {
-                show: *show_form.read(),
-                editing: editing_entry.read().clone(),
+                show: show_form,
+                editing: editing_entry,
                 date: current_date.read().clone(),
                 on_close: move |_| *show_form.write() = false,
                 on_saved: move |_| { *show_form.write() = false; refresh(); },

@@ -1,5 +1,15 @@
 use chrono::{Datelike, Duration, NaiveDate};
 use chrono_tz::America::Chicago;
+use dioxus::prelude::*;
+
+/// Newtype wrappers so that `Signal<String>` for the current date and the
+/// current week-start have distinct `TypeId`s in the Dioxus context store.
+/// Without these, both would collide under `TypeId::of::<Signal<String>>()`.
+#[derive(Clone, Copy)]
+pub struct CurrentDateSig(pub Signal<String>);
+
+#[derive(Clone, Copy)]
+pub struct CurrentWeekSig(pub Signal<String>);
 
 /// Navigate a YYYY-MM-DD date string by `delta` days (positive = forward).
 pub fn navigate_date(date: &str, delta: i64) -> String {
@@ -51,6 +61,13 @@ pub fn live_elapsed_hours(utc_start: &str) -> f64 {
         }
         None => 0.0,
     }
+}
+
+/// Format "YYYY-MM-DD" as "Mon 05/20" (weekday abbreviation + month/day).
+pub fn format_day_label(date: &str) -> String {
+    NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .map(|d| d.format("%a %m/%d").to_string())
+        .unwrap_or_else(|_| date.to_string())
 }
 
 fn round_to_nearest_15(minutes: u32) -> u32 {

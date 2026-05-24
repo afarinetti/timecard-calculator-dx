@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use api::{LaborCode, HourType, PayPeriodAnchor, Repository};
-use crate::{routes::Route, utils::{today, week_start_for}};
+use crate::{routes::Route, utils::{today, week_start_for, CurrentDateSig, CurrentWeekSig}};
 
 #[component]
 pub fn App() -> Element {
@@ -9,10 +9,11 @@ pub fn App() -> Element {
     let hour_types    = use_context_provider(|| Signal::new(Vec::<HourType>::new()));
     let anchors       = use_context_provider(|| Signal::new(Vec::<PayPeriodAnchor>::new()));
 
-    // Navigation state
+    // Navigation state — wrapped in distinct newtypes so both signals can
+    // coexist in the context store (both are Signal<String> but different TypeIds).
     let today_str = today();
-    use_context_provider(|| Signal::new(today_str.clone()));          // current_date: Signal<String>
-    use_context_provider(|| Signal::new(week_start_for(&today_str))); // current_week: Signal<String>
+    use_context_provider(|| CurrentDateSig(Signal::new(today_str.clone())));
+    use_context_provider(|| CurrentWeekSig(Signal::new(week_start_for(&today_str))));
 
     // Load lookup data once on startup
     let _init = use_resource(move || async move {
