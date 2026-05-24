@@ -895,4 +895,191 @@ mod tests {
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "New");
     }
+
+    // ---- Entry Export / Import ----
+
+    #[sqlx::test(migrator = "crate::db::MIGRATOR")]
+    async fn export_entries_empty_db(pool: sqlx::SqlitePool) {
+        let repo = Repository::new(&pool);
+        let payload = repo.export_entries().await.unwrap();
+        assert!(payload.entries.is_empty());
+    }
+
+    #[sqlx::test(migrator = "crate::db::MIGRATOR")]
+    async fn export_entries_returns_wbs_and_code(pool: sqlx::SqlitePool) {
+        let (lc_id, ht_id) = seed_lookup(&pool).await;
+        let repo = Repository::new(&pool);
+        repo.create_timecard_entry(&CreateTimecardEntry {
+            labor_code_id: lc_id, hour_type_id: ht_id, telework: true,
+            date: "2026-05-21".into(), start_time: "08:00".into(), end_time: Some("16:00".into()),
+        }).await.unwrap();
+
+        let payload = repo.export_entries().await.unwrap();
+        assert_eq!(payload.entries.len(), 1);
+        let e = &payload.entries[0];
+        assert_eq!(e.wbs_number, "WBS-T");
+        assert_eq!(e.hour_type_code, "REG");
+        assert!(e.telework);
+        assert_eq!(e.date, "2026-05-21");
+        // Times should be Central HH:MM (round-trip from create → export)
+        assert_eq!(e.start_time, "08:00"); // 08:00 CDT → UTC → 08:00 CDT
+        assert_eq!(e.end_time, Some("16:00".into())); // 16:00 CDT → UTC → 16:00 CDT
+    }
+
+    #[sqlx::test(migrator = "crate::db::MIGRATOR")]
+    async fn export_entries_includes_in_progress(pool: sqlx::SqlitePool) {
+        let (lc_id, ht_id) = seed_lookup(&pool).await;
+        let repo = Repository::new(&pool);
+        repo.create_timecard_entry(&CreateTimecardEntry {
+            labor_code_id: lc_id, hour_type_id: ht_id, telework: false,
+            date: "2026-05-21".into(), start_time: "08:00".into(), end_time: None,
+        }).await.unwrap();
+
+        let payload = repo.export_entries().await.unwrap();
+        assert_eq!(payload.entries.len(), 1);
+        assert!(payload.entries[0].end_time.is_none());
+    }
+
+    #[sqlx::test(migrator = "crate::db::MIGRATOR")]
+    async fn import_entries_creates_records(pool: sqlx::SqlitePool) {
+        let repo = Repository::new(&pool);
+        // Seed lookup data first
+        repo.import_lookup_data(
+            &[ImportLaborCode { wbs_number: "WBS-A".into(), name: "Alpha".into() }],
+            &[ImportHourType { code: "REG".into(), name: "Regular".into() }],
+        ).await.unwrap();
+
+        let count = repo.import_entries(&[ExportEntry {
+            wbs_number: "WBS-A".into(),
+            hour_type_code: "REG".into(),
+            telework: true,
+            date: "2026-05-21".into(),
+            start_time: "08:00".into(),
+            end_time: Some("16:00".into()),
+        }]).await.unwrap();
+
+        assert_eq!(count, 1);
+        let entries = repo.list_timecard_entries("2026-05-21", "2026-05-21").await.unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].telework);
+        assert_eq!(entries[0].decimal_hours, Some(8.0));
+    }
+
+    #[sqlx::test(migrator = "crate::db::MIGRATOR")]
+    async fn import_entries_fails_missing_wbs(pool: sqlx::SqlitePool) {
+        let repo = Repository::new(&pool);
+        repo.import_lookup_data(
+            &[ImportLaborCode { wbs_number: "WBS-A".into(), name: "Alpha".into() }],
+            &[ImportHourType { code: "REG".into(), name: "Regular".into() }],
+        ).await.unwrap();
+
+        let result = repo.import_entries(&[ExportEntry {
+            wbs_number: "WBS-MISSING".into(),
+            hour_type_code: "REG".into(),
+            telework: false,
+            date: "2026-05-21".into(),
+            start_time: "08:00".into(),
+            end_time: None,
+        }]).await;
+
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("Labor code not found"), "error should mention missing labor code: {}", msg);
+    }
+
+    #[sqlx::test(migrator = "crate::db::MIGRATOR")]
+    async fn import_entries_fails_missing_hour_type(pool: sqlx::SqlitePool) {
+        let repo = Repository::new(&pool);
+        repo.import_lookup_data(
+            &[ImportLaborCode { wbs_number: "WBS-A".into(), name: "Alpha".into() }],
+            &[ImportHourType { code: "REG".into(), name: "Regular".into() }],
+        ).await.unwrap();
+
+        let result = repo.import_entries(
+            &[ExportEntry {
+                wbs_number: "WBS-A".into(),
+                hour_type_code: "MISSING".into(),
+                telework: false,
+                date: "2026-05-21".into(),
+                start_time: "08:00".into(),
+                end_time: None,
+            }]).await;
+
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("Hour type not found"), "error should mention missing hour type: {}", msg);
+    }
+
+    #[sqlx::test(migrator = "crate::db::MIGRATOR")]
+    async fn import_entries_rolls_back_on_error(pool: sqlx::SqlitePool) {
+        let repo = Repository::new(&pool);
+        repo.import_lookup_data(
+            &[ImportLaborCode { wbs_number: "WBS-A".into(), name: "Alpha".into() }],
+            &[ImportHourType { code: "REG".into(), name: "Regular".into() }],
+        ).await.unwrap();
+
+        // First entry is valid, second references missing WBS
+        let result = repo.import_entries(&[
+                ExportEntry {
+                    wbs_number: "WBS-A".into(),
+                    hour_type_code: "REG".into(),
+                    telework: false,
+                    date: "2026-05-21".into(),
+                    start_time: "08:00".into(),
+                    end_time: None,
+                },
+                ExportEntry {
+                    wbs_number: "WBS-MISSING".into(),
+                    hour_type_code: "REG".into(),
+                    telework: false,
+                    date: "2026-05-21".into(),
+                    start_time: "09:00".into(),
+                    end_time: None,
+                },
+            ]).await;
+
+        assert!(result.is_err());
+        // The first entry must NOT have been persisted (transaction rolled back)
+        let entries = repo.list_timecard_entries("2026-05-21", "2026-05-21").await.unwrap();
+        assert!(entries.is_empty(), "transaction should have rolled back, but entries exist");
+    }
+
+    #[sqlx::test(migrator = "crate::db::MIGRATOR")]
+    async fn import_entries_round_trip_preserves_data(pool: sqlx::SqlitePool) {
+        let repo = Repository::new(&pool);
+        repo.import_lookup_data(
+            &[ImportLaborCode { wbs_number: "WBS-A".into(), name: "Alpha".into() }],
+            &[ImportHourType { code: "REG".into(), name: "Regular".into() }],
+        ).await.unwrap();
+
+        // Create an entry via normal API
+        repo.create_timecard_entry(&CreateTimecardEntry {
+            labor_code_id: repo.list_labor_codes().await.unwrap()[0].id,
+            hour_type_id:  repo.list_hour_types().await.unwrap()[0].id,
+            telework: true,
+            date: "2026-05-21".into(),
+            start_time: "08:00".into(),
+            end_time: Some("16:00".into()),
+        }).await.unwrap();
+
+        // Export it
+        let exported = repo.export_entries().await.unwrap();
+        assert_eq!(exported.entries.len(), 1);
+
+        // Clear the entries table (keep lookup data)
+        sqlx::query!("DELETE FROM timecard_entries").execute(&pool).await.unwrap();
+        let empty = repo.list_timecard_entries("2026-05-21", "2026-05-21").await.unwrap();
+        assert!(empty.is_empty());
+
+        // Re-import
+        let count = repo.import_entries(&exported.entries).await.unwrap();
+        assert_eq!(count, 1);
+
+        // Verify the re-imported entry matches
+        let entries = repo.list_timecard_entries("2026-05-21", "2026-05-21").await.unwrap();
+        assert_eq!(entries.len(), 1);
+        let e = &entries[0];
+        assert_eq!(e.decimal_hours, Some(8.0));
+        assert!(e.telework);
+    }
 }
