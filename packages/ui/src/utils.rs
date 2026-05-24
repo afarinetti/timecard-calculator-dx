@@ -44,11 +44,6 @@ pub fn utc_to_central_hhmm(dt: DateTime<Utc>) -> String {
     dt.with_timezone(&Local).format("%H:%M").to_string()
 }
 
-/// Elapsed decimal hours from `start` to now, rounded to nearest 15 minutes.
-pub fn live_elapsed_hours(start: DateTime<Utc>) -> f64 {
-    let mins = (Utc::now() - start).num_minutes().max(0) as f64;
-    (mins / 15.0).round() * 15.0 / 60.0
-}
 
 /// Return a Vec of YYYY-MM-DD strings from `start` to `end` inclusive.
 pub fn date_range(start: &str, end: &str) -> Vec<String> {
@@ -86,8 +81,7 @@ pub fn start_now_hhmm() -> String {
     use chrono::Timelike;
     let now = chrono::Local::now();
     let total = now.hour() * 60 + now.minute();
-    let adjusted = total.saturating_sub(15);
-    let rounded = round_to_nearest_15(adjusted).min(1439);
+    let rounded = round_to_nearest_15(total).min(1439);
     format!("{:02}:{:02}", rounded / 60, rounded % 60)
 }
 
@@ -95,10 +89,10 @@ pub fn end_now_hhmm() -> String {
     use chrono::Timelike;
     let now = chrono::Local::now();
     let total = now.hour() * 60 + now.minute();
-    let adjusted = total + 15;
-    let rounded = ceil_to_next_15(adjusted).min(1439);
+    let rounded = ceil_to_next_15(total).min(1439);
     format!("{:02}:{:02}", rounded / 60, rounded % 60)
 }
+
 
 /// Returns the IDs of entries that overlap in time with at least one other entry.
 ///
@@ -251,6 +245,7 @@ mod tests {
             labor_code_name: String::new(),
             hour_type_code: String::new(),
             hour_type_name: String::new(),
+            hour_type_badge_class: String::new(),
         }
     }
 
@@ -296,5 +291,155 @@ mod tests {
         let ids = overlapping_ids(&entries);
         assert!(ids.contains(&1), "entry 1 should be flagged");
         assert!(ids.contains(&2), "entry 2 should be flagged");
+    }
+
+    // ── start_now_hhmm / end_now_hhmm ──
+
+    #[test]
+    fn start_now_rounds_to_nearest_15() {
+        // At 14:00 (840 min) should stay 14:00
+        let total = 14 * 60;
+        let rounded = round_to_nearest_15(total).min(1439);
+        let result = format!("{:02}:{:02}", rounded / 60, rounded % 60);
+        assert_eq!(result, "14:00");
+    }
+
+    #[test]
+    fn start_now_rounds_down_at_7m() {
+        // At 14:07 (847 min) should round down to 14:00
+        let total = 14 * 60 + 7;
+        let rounded = round_to_nearest_15(total).min(1439);
+        let result = format!("{:02}:{:02}", rounded / 60, rounded % 60);
+        assert_eq!(result, "14:00");
+    }
+
+    #[test]
+    fn start_now_rounds_up_at_8m() {
+        // At 14:08 (848 min) should round up to 14:15
+        let total = 14 * 60 + 8;
+        let rounded = round_to_nearest_15(total).min(1439);
+        let result = format!("{:02}:{:02}", rounded / 60, rounded % 60);
+        assert_eq!(result, "14:15");
+    }
+
+    #[test]
+    fn start_now_clamps_at_2359() {
+        // At 23:59 (1439 min) should clamp to 23:59
+        let total = 23 * 60 + 59;
+        let rounded = round_to_nearest_15(total).min(1439);
+        let result = format!("{:02}:{:02}", rounded / 60, rounded % 60);
+        assert_eq!(result, "23:59");
+    }
+
+    #[test]
+    fn end_now_ceil_to_next_15() {
+        // At 14:01 (841 min) should ceil to 14:15
+        let total = 14 * 60 + 1;
+        let rounded = ceil_to_next_15(total).min(1439);
+        let result = format!("{:02}:{:02}", rounded / 60, rounded % 60);
+        assert_eq!(result, "14:15");
+    }
+
+    #[test]
+    fn end_now_exact_boundary_stays() {
+        // At 14:15 (855 min) should stay 14:15
+        let total = 14 * 60 + 15;
+        let rounded = ceil_to_next_15(total).min(1439);
+        let result = format!("{:02}:{:02}", rounded / 60, rounded % 60);
+        assert_eq!(result, "14:15");
+    }
+
+    #[test]
+    fn end_now_clamps_at_2359() {
+        // At 23:59 (1439 min) should clamp to 23:59
+        let total = 23 * 60 + 59;
+        let rounded = ceil_to_next_15(total).min(1439);
+        let result = format!("{:02}:{:02}", rounded / 60, rounded % 60);
+        assert_eq!(result, "23:59");
+    }
+
+    // ── date_range ──
+
+    #[test]
+    fn date_range_single_day() {
+        assert_eq!(date_range("2026-05-21", "2026-05-21"), vec!["2026-05-21"]);
+    }
+
+    #[test]
+    fn date_range_multiple_days() {
+        assert_eq!(
+            date_range("2026-05-20", "2026-05-22"),
+            vec!["2026-05-20", "2026-05-21", "2026-05-22"]
+        );
+    }
+
+    #[test]
+    fn date_range_empty_when_start_after_end() {
+        assert!(date_range("2026-05-22", "2026-05-20").is_empty());
+    }
+
+    #[test]
+    fn date_range_invalid_dates_return_empty() {
+        assert!(date_range("not-a-date", "2026-05-21").is_empty());
+        assert!(date_range("2026-05-21", "not-a-date").is_empty());
+    }
+
+    // ── format helpers ──
+
+    #[test]
+    fn format_day_col_returns_weekday_and_date() {
+        let date = NaiveDate::from_ymd_opt(2026, 5, 21).unwrap();
+        assert_eq!(format_day_col(date), ("Thu".into(), "5/21".into()));
+    }
+
+    #[test]
+    fn format_day_label_returns_abbreviated_date() {
+        let date = NaiveDate::from_ymd_opt(2026, 5, 21).unwrap();
+        assert_eq!(format_day_label(date), "Thu 05/21");
+    }
+
+
+    // ── overlapping_ids edge cases ──
+
+    #[test]
+    fn open_ended_overlaps_with_closed() {
+        let entries = vec![
+            make_entry(1, "2026-05-23T08:00:00Z", None),
+            make_entry(2, "2026-05-23T09:00:00Z", Some("2026-05-23T17:00:00Z")),
+        ];
+        let ids = overlapping_ids(&entries);
+        assert!(ids.contains(&1));
+        assert!(ids.contains(&2));
+    }
+
+    #[test]
+    fn open_ended_does_not_overlap_before_start() {
+        let entries = vec![
+            make_entry(1, "2026-05-23T12:00:00Z", None),
+            make_entry(2, "2026-05-23T08:00:00Z", Some("2026-05-23T10:00:00Z")),
+        ];
+        assert!(overlapping_ids(&entries).is_empty());
+    }
+
+    #[test]
+    fn open_ended_entries_always_overlap() {
+        let entries = vec![
+            make_entry(1, "2026-05-23T08:00:00Z", None),
+            make_entry(2, "2026-05-23T12:00:00Z", None),
+        ];
+        let ids = overlapping_ids(&entries);
+        assert!(ids.contains(&1));
+        assert!(ids.contains(&2));
+    }
+
+    #[test]
+    fn three_way_overlap_all_flagged() {
+        let entries = vec![
+            make_entry(1, "2026-05-23T08:00:00Z", Some("2026-05-23T12:00:00Z")),
+            make_entry(2, "2026-05-23T10:00:00Z", Some("2026-05-23T14:00:00Z")),
+            make_entry(3, "2026-05-23T11:00:00Z", Some("2026-05-23T15:00:00Z")),
+        ];
+        let ids = overlapping_ids(&entries);
+        assert_eq!(ids.len(), 3);
     }
 }

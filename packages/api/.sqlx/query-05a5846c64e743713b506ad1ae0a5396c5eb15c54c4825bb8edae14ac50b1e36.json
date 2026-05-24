@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n            SELECT\n                te.id as \"id!: i64\",\n                te.labor_code_id as \"labor_code_id!: i64\",\n                te.hour_type_id as \"hour_type_id!: i64\",\n                te.telework as \"telework!: i64\",\n                te.date as \"date!: NaiveDate\",\n                te.start_time as \"start_time!: DateTime<Utc>\",\n                te.end_time as \"end_time?: DateTime<Utc>\",\n                lc.wbs_number as \"wbs_number!: String\",\n                lc.name AS \"labor_code_name!: String\",\n                ht.code AS \"hour_type_code!: String\",\n                ht.name AS \"hour_type_name!: String\"\n            FROM timecard_entries te\n            JOIN labor_codes  lc ON te.labor_code_id = lc.id\n            JOIN hour_types   ht ON te.hour_type_id  = ht.id\n            WHERE te.date >= $1 AND te.date <= $2\n            ORDER BY te.date, te.start_time\n            ",
+  "query": "\n            SELECT\n                te.id as \"id!: i64\",\n                te.labor_code_id as \"labor_code_id!: i64\",\n                te.hour_type_id as \"hour_type_id!: i64\",\n                te.telework as \"telework!: i64\",\n                te.date as \"date!: NaiveDate\",\n                te.start_time as \"start_time!: DateTime<Utc>\",\n                te.end_time as \"end_time?: DateTime<Utc>\",\n                lc.wbs_number as \"wbs_number!: String\",\n                lc.name AS \"labor_code_name!: String\",\n                ht.code AS \"hour_type_code!: String\",\n                ht.name AS \"hour_type_name!: String\",\n                ht.badge_class AS \"hour_type_badge_class!: String\"\n            FROM timecard_entries te\n            JOIN labor_codes  lc ON te.labor_code_id = lc.id\n            JOIN hour_types   ht ON te.hour_type_id  = ht.id\n            WHERE te.id = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -57,24 +57,30 @@
         "name": "hour_type_name!: String",
         "ordinal": 10,
         "type_info": "Text"
+      },
+      {
+        "name": "hour_type_badge_class!: String",
+        "ordinal": 11,
+        "type_info": "Text"
       }
     ],
     "parameters": {
-      "Right": 2
+      "Right": 1
     },
     "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
       true,
       false,
-      false,
-      false,
-      false,
-      false,
-      true,
       false,
       false,
       false,
       false
     ]
   },
-  "hash": "da8c7ca502e7b474cccf1ef0289d8a9a3d666f4117146efc77571a64a5136ef4"
+  "hash": "05a5846c64e743713b506ad1ae0a5396c5eb15c54c4825bb8edae14ac50b1e36"
 }

@@ -94,7 +94,15 @@ pub fn EntryFormModal(
                 let e = end_time.read().clone();
                 if e.is_empty() { None } else { Some(e) }
             }
-            EntryMode::Duration => end_from_duration(&start, *duration.read()),
+            EntryMode::Duration => {
+                match end_from_duration(&start, *duration.read()) {
+                    Some(e) => Some(e),
+                    None => {
+                        *error.write() = Some("Duration exceeds midnight — use Time Inputs mode instead.".into());
+                        return;
+                    }
+                }
+            }
         };
 
         let editing_val = editing();

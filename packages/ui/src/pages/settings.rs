@@ -21,6 +21,7 @@ pub fn Settings() -> Element {
     let mut ht_code     = use_signal(String::new);
     let mut ht_name     = use_signal(String::new);
     let mut editing_ht  = use_signal(|| Option::<HourType>::None);
+    let mut ht_badge_class = use_signal(String::new);
 
     // --- Pay Period Anchor form state ---
     let mut anchor_date = use_signal(String::new);
@@ -81,19 +82,21 @@ pub fn Settings() -> Element {
     let save_ht = move |_| {
         let code = ht_code.read().trim().to_string();
         let name = ht_name.read().trim().to_string();
+        let badge = ht_badge_class.read().trim().to_string();
         if code.is_empty() || name.is_empty() { return; }
         let editing = editing_ht.read().clone();
         let mut ht_sig  = hour_types;
         let mut edit    = editing_ht;
         let mut code_s  = ht_code;
         let mut name_s  = ht_name;
+        let mut badge_s = ht_badge_class;
         let mut err     = error;
         spawn(async move {
             let repo = Repository::new(api::pool());
             let result = if let Some(ref e) = editing {
-                repo.update_hour_type(&UpdateHourType { id: e.id, code, name }).await
+                repo.update_hour_type(&UpdateHourType { id: e.id, code, name, badge_class: badge }).await
             } else {
-                repo.create_hour_type(&CreateHourType { code, name }).await
+                repo.create_hour_type(&CreateHourType { code, name, badge_class: badge }).await
             };
             match result {
                 Ok(_) => {
@@ -101,6 +104,7 @@ pub fn Settings() -> Element {
                     *edit.write() = None;
                     *code_s.write() = String::new();
                     *name_s.write() = String::new();
+                    *badge_s.write() = String::new();
                 }
                 Err(e) => *err.write() = Some(e.to_string()),
             }
@@ -110,6 +114,7 @@ pub fn Settings() -> Element {
     let cancel_ht = move |_| {
         *editing_ht.write() = None;
         *ht_code.write() = String::new();
+        *ht_badge_class.write() = String::new();
         *ht_name.write() = String::new();
     };
 
@@ -413,6 +418,11 @@ pub fn Settings() -> Element {
                                 input { class: "input input-bordered input-sm w-full", placeholder: "Regular",
                                     value: "{ht_name}", oninput: move |e| *ht_name.write() = e.value() }
                             }
+                            div { class: "flex flex-col gap-1 flex-1 min-w-32",
+                                label { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold", "Badge Class" }
+                                input { class: "input input-bordered input-sm w-full", placeholder: "pd-type-reg",
+                                    value: "{ht_badge_class}", oninput: move |e| *ht_badge_class.write() = e.value() }
+                            }
                             button { class: "btn btn-sm btn-primary", onclick: save_ht,
                                 if editing_ht.read().is_some() { "Update" } else { "Add" }
                             }
@@ -426,16 +436,20 @@ pub fn Settings() -> Element {
                                     th { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold text-left pb-2 px-4 border-b border-[#21262d]", "Code" }
                                     th { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold text-left pb-2 px-4 border-b border-[#21262d]", "Name" }
                                     th { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold text-right pb-2 px-4 border-b border-[#21262d]", "Actions" }
+                                    th { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] font-semibold text-left pb-2 px-4 border-b border-[#21262d]", "Badge Class" }
                                 } }
                                 tbody {
                                     for ht in hour_types.read().iter() {
                                         tr { key: "{ht.id}", class: "border-b border-[#21262d] last:border-b-0 hover:bg-[#161b2260]",
                                             td { class: "px-4 py-3",
-                                                span { class: if ht.code.to_uppercase() == "OT" { "pd-type-ot font-mono text-xs" } else { "pd-type-reg font-mono text-xs" }, "{ht.code}" }
+                                                span { class: "{ht.badge_class} font-mono text-xs", "{ht.code}" }
                                             }
                                             td { class: "px-4 py-3 text-sm text-[#e6edf3] font-medium", "{ht.name}" }
+                                            td { class: "px-4 py-3",
+                                                code { class: "font-mono text-xs text-[#8b949e] bg-[#161b22] border border-[#21262d] px-2 py-0.5 rounded", "{ht.badge_class}" }
+                                            }
                                             td { class: "px-4 py-3 flex gap-1.5 justify-end",
-                                                button { class: "pd-action-edit", onclick: { let ht = ht.clone(); move |_| { *ht_code.write() = ht.code.clone(); *ht_name.write() = ht.name.clone(); *editing_ht.write() = Some(ht.clone()); } }, "Edit" }
+                                                button { class: "pd-action-edit", onclick: { let ht = ht.clone(); move |_| { *ht_code.write() = ht.code.clone(); *ht_name.write() = ht.name.clone(); *ht_badge_class.write() = ht.badge_class.clone(); *editing_ht.write() = Some(ht.clone()); } }, "Edit" }
                                                 button { class: "pd-action-delete", onclick: { let id = ht.id; move |_| delete_ht(id) }, "Delete" }
                                             }
                                         }

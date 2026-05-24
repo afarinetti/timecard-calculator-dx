@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO hour_types (code, name, badge_class) VALUES ($1, $2, $3) ON CONFLICT(code) DO UPDATE SET name = excluded.name, badge_class = excluded.badge_class",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "cb4444ade74495fd0e3444639eab6c97b6b4a0a89b3f2bb90013bdc00cca106e"
+}

@@ -61,8 +61,7 @@ pub fn EntryTable(
                                     // Hour type — color coded
                                     td { class: "px-4 py-[11px]",
                                         span {
-                                            class: if entry.hour_type_code.to_uppercase() == "OT" { "pd-type-ot font-mono text-xs" }
-                                                   else { "pd-type-reg font-mono text-xs" },
+                                            class: "{entry.hour_type_badge_class} font-mono text-xs",
                                             "{entry.hour_type_code}"
                                         }
                                     }

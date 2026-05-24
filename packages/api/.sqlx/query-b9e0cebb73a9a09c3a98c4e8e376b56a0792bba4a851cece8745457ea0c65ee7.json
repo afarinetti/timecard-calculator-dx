@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO hour_types (code, name, badge_class) VALUES ($1, $2, $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "b9e0cebb73a9a09c3a98c4e8e376b56a0792bba4a851cece8745457ea0c65ee7"
+}

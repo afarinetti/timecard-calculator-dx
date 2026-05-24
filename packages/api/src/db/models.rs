@@ -30,12 +30,14 @@ pub struct HourType {
     pub id: i64,
     pub code: String,
     pub name: String,
+    pub badge_class: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateHourType {
     pub code: String,
     pub name: String,
+    pub badge_class: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -43,6 +45,7 @@ pub struct UpdateHourType {
     pub id: i64,
     pub code: String,
     pub name: String,
+    pub badge_class: String,
 }
 
 // --- Timecard Entries ---
@@ -61,6 +64,7 @@ pub struct TimecardEntryRow {
     pub labor_code_name: String,
     pub hour_type_code: String,
     pub hour_type_name: String,
+    pub hour_type_badge_class: String,
 }
 
 /// Public view with computed `decimal_hours` and normalized `telework: bool`.
@@ -78,6 +82,7 @@ pub struct TimecardEntryView {
     pub labor_code_name: String,
     pub hour_type_code: String,
     pub hour_type_name: String,
+    pub hour_type_badge_class: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -157,6 +162,7 @@ pub struct ImportLaborCode {
 pub struct ImportHourType {
     pub code: String,
     pub name: String,
+    pub badge_class: String,
 }
 
 /// Shared shape for both import (deserialize) and export (serialize).

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE hour_types SET code = $1, name = $2, badge_class = $3 WHERE id = $4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "9b1e4bc0b7e78f1ed84494397ad165d71c86b04d42e732b4cd2809b1d8b29aa8"
+}

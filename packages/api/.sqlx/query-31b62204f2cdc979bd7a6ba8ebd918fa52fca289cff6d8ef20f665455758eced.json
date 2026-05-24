@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id as \"id!\", code, name FROM hour_types ORDER BY code",
+  "query": "SELECT id as \"id!\", code, name, badge_class FROM hour_types WHERE code = $1",
   "describe": {
     "columns": [
       {
@@ -17,16 +17,22 @@
         "name": "name",
         "ordinal": 2,
         "type_info": "Text"
+      },
+      {
+        "name": "badge_class",
+        "ordinal": 3,
+        "type_info": "Text"
       }
     ],
     "parameters": {
-      "Right": 0
+      "Right": 1
     },
     "nullable": [
       true,
       false,
+      false,
       false
     ]
   },
-  "hash": "bac67fadcc73ca3bca2da196a5b8e84430089bb8fde62d558588bff9bc7280ff"
+  "hash": "31b62204f2cdc979bd7a6ba8ebd918fa52fca289cff6d8ef20f665455758eced"
 }

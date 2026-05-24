@@ -28,7 +28,7 @@ impl<'a> Repository<'a> {
     }
 
     /// Convert a `TimecardEntryRow` to a `TimecardEntryView` with computed decimal_hours.
-    fn row_to_view(r: TimecardEntryRow) -> TimecardEntryView {
+    pub(crate) fn row_to_view(r: TimecardEntryRow) -> TimecardEntryView {
         let decimal_hours = compute_decimal_hours(r.start_time, r.end_time);
         TimecardEntryView {
             id: r.id,
@@ -43,6 +43,7 @@ impl<'a> Repository<'a> {
             labor_code_name: r.labor_code_name,
             hour_type_code: r.hour_type_code,
             hour_type_name: r.hour_type_name,
+            hour_type_badge_class: r.hour_type_badge_class,
         }
     }
 
@@ -91,34 +92,34 @@ impl<'a> Repository<'a> {
     // --- Hour Types ---
 
     pub async fn list_hour_types(&self) -> Result<Vec<HourType>, sqlx::Error> {
-        sqlx::query_as!(HourType, r#"SELECT id as "id!", code, name FROM hour_types ORDER BY code"#)
+        sqlx::query_as!(HourType, r#"SELECT id as "id!", code, name, badge_class FROM hour_types ORDER BY code"#)
             .fetch_all(self.pool)
             .await
     }
 
     pub async fn create_hour_type(&self, input: &CreateHourType) -> Result<HourType, sqlx::Error> {
         let id = sqlx::query!(
-            "INSERT INTO hour_types (code, name) VALUES ($1, $2)",
-            input.code, input.name,
+            "INSERT INTO hour_types (code, name, badge_class) VALUES ($1, $2, $3)",
+            input.code, input.name, input.badge_class,
         )
         .execute(self.pool)
         .await?
         .last_insert_rowid();
 
-        sqlx::query_as!(HourType, r#"SELECT id as "id!", code, name FROM hour_types WHERE id = $1"#, id)
+        sqlx::query_as!(HourType, r#"SELECT id as "id!", code, name, badge_class FROM hour_types WHERE id = $1"#, id)
             .fetch_one(self.pool)
             .await
     }
 
     pub async fn update_hour_type(&self, input: &UpdateHourType) -> Result<HourType, sqlx::Error> {
         sqlx::query!(
-            "UPDATE hour_types SET code = $1, name = $2 WHERE id = $3",
-            input.code, input.name, input.id,
+            "UPDATE hour_types SET code = $1, name = $2, badge_class = $3 WHERE id = $4",
+            input.code, input.name, input.badge_class, input.id,
         )
         .execute(self.pool)
         .await?;
 
-        sqlx::query_as!(HourType, r#"SELECT id as "id!", code, name FROM hour_types WHERE id = $1"#, input.id)
+        sqlx::query_as!(HourType, r#"SELECT id as "id!", code, name, badge_class FROM hour_types WHERE id = $1"#, input.id)
             .fetch_one(self.pool)
             .await
     }
@@ -151,7 +152,8 @@ impl<'a> Repository<'a> {
                 lc.wbs_number as "wbs_number!: String",
                 lc.name AS "labor_code_name!: String",
                 ht.code AS "hour_type_code!: String",
-                ht.name AS "hour_type_name!: String"
+                ht.name AS "hour_type_name!: String",
+                ht.badge_class AS "hour_type_badge_class!: String"
             FROM timecard_entries te
             JOIN labor_codes  lc ON te.labor_code_id = lc.id
             JOIN hour_types   ht ON te.hour_type_id  = ht.id
@@ -337,7 +339,7 @@ impl<'a> Repository<'a> {
         Ok(WeekSummary { entries, total_hours, by_day, by_labor_code })
     }
 
-    fn aggregate_by_day(entries: &[TimecardEntryView], from: &str, to: &str) -> Vec<DayAggregate> {
+    pub(crate) fn aggregate_by_day(entries: &[TimecardEntryView], from: &str, to: &str) -> Vec<DayAggregate> {
         use chrono::{Duration, NaiveDate};
         let mut result = Vec::new();
         let start = match from.parse::<NaiveDate>() { Ok(d) => d, Err(_) => return result };
@@ -356,7 +358,7 @@ impl<'a> Repository<'a> {
         result
     }
 
-    fn aggregate_by_labor_code(entries: &[TimecardEntryView]) -> Vec<AggregateRow> {
+    pub(crate) fn aggregate_by_labor_code(entries: &[TimecardEntryView]) -> Vec<AggregateRow> {
         use std::collections::HashMap;
         let mut map: HashMap<i64, AggregateRow> = HashMap::new();
         for e in entries {
@@ -393,8 +395,8 @@ impl<'a> Repository<'a> {
         let mut ht_count = 0u64;
         for ht in hour_types {
             sqlx::query!(
-                "INSERT INTO hour_types (code, name) VALUES ($1, $2) ON CONFLICT(code) DO UPDATE SET name = excluded.name",
-                ht.code, ht.name,
+                "INSERT INTO hour_types (code, name, badge_class) VALUES ($1, $2, $3) ON CONFLICT(code) DO UPDATE SET name = excluded.name, badge_class = excluded.badge_class",
+                ht.code, ht.name, ht.badge_class,
             )
             .execute(&mut *tx)
             .await?;
@@ -417,7 +419,7 @@ impl<'a> Repository<'a> {
                 .collect(),
             hour_types: hour_types
                 .into_iter()
-                .map(|ht| ImportHourType { code: ht.code, name: ht.name })
+                .map(|ht| ImportHourType { code: ht.code, name: ht.name, badge_class: ht.badge_class })
                 .collect(),
         })
     }
@@ -445,7 +447,8 @@ impl<'a> Repository<'a> {
                 lc.wbs_number as "wbs_number!: String",
                 lc.name AS "labor_code_name!: String",
                 ht.code AS "hour_type_code!: String",
-                ht.name AS "hour_type_name!: String"
+                ht.name AS "hour_type_name!: String",
+                ht.badge_class AS "hour_type_badge_class!: String"
             FROM timecard_entries te
             JOIN labor_codes  lc ON te.labor_code_id = lc.id
             JOIN hour_types   ht ON te.hour_type_id  = ht.id
@@ -494,7 +497,7 @@ impl<'a> Repository<'a> {
             // Resolve hour type code → hour_type_id
             let hour_type_id: i64 = sqlx::query_as!(
                 HourType,
-                r#"SELECT id as "id!", code, name FROM hour_types WHERE code = $1"#,
+                r#"SELECT id as "id!", code, name, badge_class FROM hour_types WHERE code = $1"#,
                 entry.hour_type_code,
             )
             .fetch_one(&mut *tx)
@@ -544,7 +547,8 @@ impl<'a> Repository<'a> {
                 lc.wbs_number as "wbs_number!: String",
                 lc.name AS "labor_code_name!: String",
                 ht.code AS "hour_type_code!: String",
-                ht.name AS "hour_type_name!: String"
+                ht.name AS "hour_type_name!: String",
+                ht.badge_class AS "hour_type_badge_class!: String"
             FROM timecard_entries te
             JOIN labor_codes  lc ON te.labor_code_id = lc.id
             JOIN hour_types   ht ON te.hour_type_id  = ht.id
@@ -702,7 +706,7 @@ mod tests {
     #[sqlx::test(migrator = "crate::db::MIGRATOR")]
     async fn create_hour_type_returns_new_record(pool: sqlx::SqlitePool) {
         let repo = Repository::new(&pool);
-        let result = repo.create_hour_type(&CreateHourType { code: "REG".into(), name: "Regular".into() }).await.unwrap();
+        let result = repo.create_hour_type(&CreateHourType { code: "REG".into(), name: "Regular".into(), badge_class: "pd-type-reg".into() }).await.unwrap();
         assert_eq!(result.code, "REG");
         assert_eq!(result.name, "Regular");
     }
@@ -710,8 +714,8 @@ mod tests {
     #[sqlx::test(migrator = "crate::db::MIGRATOR")]
     async fn list_hour_types_ordered_by_code(pool: sqlx::SqlitePool) {
         let repo = Repository::new(&pool);
-        repo.create_hour_type(&CreateHourType { code: "OVT".into(), name: "Overtime".into() }).await.unwrap();
-        repo.create_hour_type(&CreateHourType { code: "REG".into(), name: "Regular".into() }).await.unwrap();
+        repo.create_hour_type(&CreateHourType { code: "OVT".into(), name: "Overtime".into(), badge_class: "pd-type-reg".into() }).await.unwrap();
+        repo.create_hour_type(&CreateHourType { code: "REG".into(), name: "Regular".into(), badge_class: "pd-type-reg".into() }).await.unwrap();
         let list = repo.list_hour_types().await.unwrap();
         assert_eq!(list[0].code, "OVT");
         assert_eq!(list[1].code, "REG");
@@ -722,7 +726,7 @@ mod tests {
     async fn seed_lookup(pool: &sqlx::SqlitePool) -> (i64, i64) {
         let repo = Repository::new(pool);
         let lc = repo.create_labor_code(&CreateLaborCode { wbs_number: "WBS-T".into(), name: "Test".into() }).await.unwrap();
-        let ht = repo.create_hour_type(&CreateHourType { code: "REG".into(), name: "Regular".into() }).await.unwrap();
+        let ht = repo.create_hour_type(&CreateHourType { code: "REG".into(), name: "Regular".into(), badge_class: "pd-type-reg".into() }).await.unwrap();
         (lc.id, ht.id)
     }
 
@@ -946,7 +950,7 @@ mod tests {
         // Seed lookup data first
         repo.import_lookup_data(
             &[ImportLaborCode { wbs_number: "WBS-A".into(), name: "Alpha".into() }],
-            &[ImportHourType { code: "REG".into(), name: "Regular".into() }],
+            &[ImportHourType { code: "REG".into(), name: "Regular".into(), badge_class: "pd-type-reg".into() }],
         ).await.unwrap();
 
         let count = repo.import_entries(&[ExportEntry {
@@ -970,7 +974,7 @@ mod tests {
         let repo = Repository::new(&pool);
         repo.import_lookup_data(
             &[ImportLaborCode { wbs_number: "WBS-A".into(), name: "Alpha".into() }],
-            &[ImportHourType { code: "REG".into(), name: "Regular".into() }],
+            &[ImportHourType { code: "REG".into(), name: "Regular".into(), badge_class: "pd-type-reg".into() }],
         ).await.unwrap();
 
         let result = repo.import_entries(&[ExportEntry {
@@ -992,7 +996,7 @@ mod tests {
         let repo = Repository::new(&pool);
         repo.import_lookup_data(
             &[ImportLaborCode { wbs_number: "WBS-A".into(), name: "Alpha".into() }],
-            &[ImportHourType { code: "REG".into(), name: "Regular".into() }],
+            &[ImportHourType { code: "REG".into(), name: "Regular".into(), badge_class: "pd-type-reg".into() }],
         ).await.unwrap();
 
         let result = repo.import_entries(
@@ -1015,7 +1019,7 @@ mod tests {
         let repo = Repository::new(&pool);
         repo.import_lookup_data(
             &[ImportLaborCode { wbs_number: "WBS-A".into(), name: "Alpha".into() }],
-            &[ImportHourType { code: "REG".into(), name: "Regular".into() }],
+            &[ImportHourType { code: "REG".into(), name: "Regular".into(), badge_class: "pd-type-reg".into() }],
         ).await.unwrap();
 
         // First entry is valid, second references missing WBS
@@ -1049,7 +1053,7 @@ mod tests {
         let repo = Repository::new(&pool);
         repo.import_lookup_data(
             &[ImportLaborCode { wbs_number: "WBS-A".into(), name: "Alpha".into() }],
-            &[ImportHourType { code: "REG".into(), name: "Regular".into() }],
+            &[ImportHourType { code: "REG".into(), name: "Regular".into(), badge_class: "pd-type-reg".into() }],
         ).await.unwrap();
 
         // Create an entry via normal API
@@ -1067,7 +1071,7 @@ mod tests {
         assert_eq!(exported.entries.len(), 1);
 
         // Clear the entries table (keep lookup data)
-        sqlx::query!("DELETE FROM timecard_entries").execute(&pool).await.unwrap();
+        sqlx::query("DELETE FROM timecard_entries").execute(&pool).await.unwrap();
         let empty = repo.list_timecard_entries("2026-05-21", "2026-05-21").await.unwrap();
         assert!(empty.is_empty());
 
@@ -1083,3 +1087,152 @@ mod tests {
         assert!(e.telework);
     }
 }
+
+    // ---- row_to_view (pure) ----
+
+    #[test]
+    fn row_to_view_converts_telework_zero_to_false() {
+        let row = TimecardEntryRow {
+            id: 1, labor_code_id: 1, hour_type_id: 1, telework: 0,
+            date: chrono::NaiveDate::from_ymd_opt(2026, 5, 21).unwrap(),
+            start_time: chrono::Utc::now(), end_time: Some(chrono::Utc::now()),
+            wbs_number: "WBS".into(), labor_code_name: "Test".into(),
+            hour_type_code: "REG".into(), hour_type_name: "Regular".into(), hour_type_badge_class: "pd-type-reg".into(),
+        };
+        let view = Repository::row_to_view(row);
+        assert!(!view.telework);
+    }
+
+    #[test]
+    fn row_to_view_converts_telework_nonzero_to_true() {
+        let row = TimecardEntryRow {
+            id: 1, labor_code_id: 1, hour_type_id: 1, telework: 1,
+            date: chrono::NaiveDate::from_ymd_opt(2026, 5, 21).unwrap(),
+            start_time: chrono::Utc::now(), end_time: Some(chrono::Utc::now()),
+            wbs_number: "WBS".into(), labor_code_name: "Test".into(),
+            hour_type_code: "REG".into(), hour_type_name: "Regular".into(), hour_type_badge_class: "pd-type-reg".into(),
+        };
+        let view = Repository::row_to_view(row);
+        assert!(view.telework);
+    }
+
+    // ---- aggregate_by_day (pure) ----
+
+    #[test]
+    fn aggregate_by_day_includes_empty_days() {
+        use chrono::NaiveDate;
+        let entries = vec![
+            TimecardEntryView {
+                id: 1, labor_code_id: 1, hour_type_id: 1, telework: false,
+                date: NaiveDate::from_ymd_opt(2026, 5, 21).unwrap(),
+                start_time: chrono::Utc::now(), end_time: Some(chrono::Utc::now()),
+                decimal_hours: Some(8.0),
+                wbs_number: "WBS".into(), labor_code_name: "Test".into(),
+                hour_type_code: "REG".into(), hour_type_name: "Regular".into(), hour_type_badge_class: "pd-type-reg".into(),
+            },
+        ];
+        let result = Repository::aggregate_by_day(&entries, "2026-05-20", "2026-05-22"
+        );
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].date, "2026-05-20");
+        assert_eq!(result[0].total_hours, 0.0);
+        assert_eq!(result[1].date, "2026-05-21");
+        assert_eq!(result[1].total_hours, 8.0);
+        assert_eq!(result[2].date, "2026-05-22");
+        assert_eq!(result[2].total_hours, 0.0);
+    }
+
+    #[test]
+    fn aggregate_by_day_invalid_range_returns_empty() {
+        let result = Repository::aggregate_by_day(&[], "not-a-date", "2026-05-21"
+        );
+        assert!(result.is_empty());
+    }
+
+    // ---- aggregate_by_labor_code (pure) ----
+
+    #[test]
+    fn aggregate_by_labor_code_groups_and_sums() {
+        use chrono::NaiveDate;
+        let entries = vec![
+            TimecardEntryView {
+                id: 1, labor_code_id: 1, hour_type_id: 1, telework: false,
+                date: NaiveDate::from_ymd_opt(2026, 5, 21).unwrap(),
+                start_time: chrono::Utc::now(), end_time: Some(chrono::Utc::now()),
+                decimal_hours: Some(4.0),
+                wbs_number: "WBS-A".into(), labor_code_name: "Alpha".into(),
+                hour_type_code: "REG".into(), hour_type_name: "Regular".into(), hour_type_badge_class: "pd-type-reg".into(),
+            },
+            TimecardEntryView {
+                id: 2, labor_code_id: 1, hour_type_id: 1, telework: false,
+                date: NaiveDate::from_ymd_opt(2026, 5, 21).unwrap(),
+                start_time: chrono::Utc::now(), end_time: Some(chrono::Utc::now()),
+                decimal_hours: Some(6.0),
+                wbs_number: "WBS-A".into(), labor_code_name: "Alpha".into(),
+                hour_type_code: "REG".into(), hour_type_name: "Regular".into(), hour_type_badge_class: "pd-type-reg".into(),
+            },
+            TimecardEntryView {
+                id: 3, labor_code_id: 2, hour_type_id: 1, telework: false,
+                date: NaiveDate::from_ymd_opt(2026, 5, 21).unwrap(),
+                start_time: chrono::Utc::now(), end_time: Some(chrono::Utc::now()),
+                decimal_hours: Some(2.0),
+                wbs_number: "WBS-B".into(), labor_code_name: "Beta".into(),
+                hour_type_code: "REG".into(), hour_type_name: "Regular".into(), hour_type_badge_class: "pd-type-reg".into(),
+            },
+        ];
+        let result = Repository::aggregate_by_labor_code(&entries);
+        assert_eq!(result.len(), 2);
+        let alpha = result.iter().find(|r| r.wbs_number == "WBS-A").unwrap();
+        assert_eq!(alpha.total_hours, 10.0);
+        let beta = result.iter().find(|r| r.wbs_number == "WBS-B").unwrap();
+        assert_eq!(beta.total_hours, 2.0);
+    }
+
+    #[test]
+    fn aggregate_by_labor_code_sorts_by_wbs() {
+        use chrono::NaiveDate;
+        let entries = vec![
+            TimecardEntryView {
+                id: 1, labor_code_id: 2, hour_type_id: 1, telework: false,
+                date: NaiveDate::from_ymd_opt(2026, 5, 21).unwrap(),
+                start_time: chrono::Utc::now(), end_time: Some(chrono::Utc::now()),
+                decimal_hours: Some(1.0),
+                wbs_number: "WBS-Z".into(), labor_code_name: "Zebra".into(),
+                hour_type_code: "REG".into(), hour_type_name: "Regular".into(), hour_type_badge_class: "pd-type-reg".into(),
+            },
+            TimecardEntryView {
+                id: 2, labor_code_id: 1, hour_type_id: 1, telework: false,
+                date: NaiveDate::from_ymd_opt(2026, 5, 21).unwrap(),
+                start_time: chrono::Utc::now(), end_time: Some(chrono::Utc::now()),
+                decimal_hours: Some(1.0),
+                wbs_number: "WBS-A".into(), labor_code_name: "Alpha".into(),
+                hour_type_code: "REG".into(), hour_type_name: "Regular".into(), hour_type_badge_class: "pd-type-reg".into(),
+            },
+        ];
+        let result = Repository::aggregate_by_labor_code(&entries);
+        assert_eq!(result[0].wbs_number, "WBS-A");
+        assert_eq!(result[1].wbs_number, "WBS-Z");
+    }
+
+    // ---- compute_pay_periods edge cases ----
+
+    #[test]
+    fn compute_pay_periods_dedups_overlapping_anchors() {
+        let anchors = vec![
+            PayPeriodAnchor { id: 1, start_date: "2026-05-06".into() },
+            PayPeriodAnchor { id: 2, start_date: "2026-05-20".into() },
+        ];
+        let periods = Repository::compute_pay_periods(&anchors, "2026-05-21");
+        let period_0520 = periods.iter().filter(|p| p.start_date == "2026-05-20").count();
+        assert_eq!(period_0520, 1, "overlapping period from two anchors should be deduplicated");
+    }
+
+    #[test]
+    fn compute_pay_periods_invalid_anchor_skipped() {
+        let anchors = vec![
+            PayPeriodAnchor { id: 1, start_date: "not-a-date".into() },
+            PayPeriodAnchor { id: 2, start_date: "2026-05-06".into() },
+        ];
+        let periods = Repository::compute_pay_periods(&anchors, "2026-05-21");
+        assert!(!periods.is_empty(), "valid anchor should still produce periods");
+    }

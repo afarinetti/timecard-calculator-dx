@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id as \"id!\", code, name FROM hour_types WHERE id = $1",
+  "query": "SELECT id as \"id!\", code, name, badge_class FROM hour_types WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -17,6 +17,11 @@
         "name": "name",
         "ordinal": 2,
         "type_info": "Text"
+      },
+      {
+        "name": "badge_class",
+        "ordinal": 3,
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -25,8 +30,9 @@
     "nullable": [
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "0e0df74fb2b47501d4af443da234ec9ef722ceb3871239fb6cd5a03801307a78"
+  "hash": "9045582efd128abfb0627a2bc3eeabda9ca47e1abd2db1c314bacd064da2b979"
 }

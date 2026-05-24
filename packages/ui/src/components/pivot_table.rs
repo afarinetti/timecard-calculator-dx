@@ -12,6 +12,7 @@ struct PivotRow {
     labor_code_name:  String,
     hour_type_code:   String,
     telework:         bool,
+    hour_type_badge_class: String,
     /// Hours per day, indexed in the same order as the `days` slice.
     cells:            Vec<Option<f64>>,
     total:            f64,
@@ -22,7 +23,7 @@ fn build_pivot(entries: &[TimecardEntryView], days: &[String]) -> Vec<PivotRow> 
     // Unique row keys in insertion order
     type RowKey = (i64, i64, bool); // (labor_code_id, hour_type_id, telework)
     let mut row_order: Vec<RowKey> = Vec::new();
-    let mut meta: HashMap<RowKey, (String, String, String)> = HashMap::new(); // → (wbs, name, ht_code)
+    let mut meta: HashMap<RowKey, (String, String, String, String)> = HashMap::new(); // → (wbs, name, ht_code, badge_class)
     let mut cells: HashMap<(RowKey, String), f64> = HashMap::new();
     let mut seen: HashSet<RowKey> = HashSet::new();
 
@@ -35,6 +36,7 @@ fn build_pivot(entries: &[TimecardEntryView], days: &[String]) -> Vec<PivotRow> 
                     entry.wbs_number.clone(),
                     entry.labor_code_name.clone(),
                     entry.hour_type_code.clone(),
+                    entry.hour_type_badge_class.clone(),
                 ));
             }
             *cells.entry((key, entry.date.to_string())).or_default() += h;
@@ -51,7 +53,7 @@ fn build_pivot(entries: &[TimecardEntryView], days: &[String]) -> Vec<PivotRow> 
     row_order
         .iter()
         .map(|key| {
-            let (_wbs, name, ht) = meta[key].clone();
+            let (_wbs, name, ht, badge) = meta[key].clone();
             let day_cells: Vec<Option<f64>> = days
                 .iter()
                 .map(|d| cells.get(&(*key, d.clone())).copied())
@@ -63,6 +65,7 @@ fn build_pivot(entries: &[TimecardEntryView], days: &[String]) -> Vec<PivotRow> 
                 labor_code_name: name,
                 hour_type_code: ht,
                 telework: key.2,
+                hour_type_badge_class: badge,
                 cells: day_cells,
                 total,
             }
@@ -193,11 +196,7 @@ pub fn PivotTable(
                                 }
                             }
                         });
-                        let ht_class = if row.hour_type_code.to_uppercase() == "OT" {
-                            "pd-type-ot font-mono text-xs"
-                        } else {
-                            "pd-type-reg font-mono text-xs"
-                        };
+                        let ht_class = format!("{} font-mono text-xs", row.hour_type_badge_class);
                         let row_total = row.total;
                         rsx! {
                             tr { key: "{row_idx}",
@@ -265,5 +264,125 @@ pub fn PivotTable(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDate;
+
+    #[allow(clippy::too_many_arguments)]
+    fn make_entry(
+        id: i64,
+        labor_code_id: i64,
+        hour_type_id: i64,
+        telework: bool,
+        date: &str,
+        decimal_hours: Option<f64>,
+        wbs: &str,
+        lc_name: &str,
+        ht_code: &str,
+    ) -> TimecardEntryView {
+        TimecardEntryView {
+            id,
+            labor_code_id,
+            hour_type_id,
+            telework,
+            date: NaiveDate::parse_from_str(date, "%Y-%m-%d").unwrap(),
+            start_time: chrono::Utc::now(),
+            end_time: None,
+            decimal_hours,
+            wbs_number: wbs.into(),
+            labor_code_name: lc_name.into(),
+            hour_type_code: ht_code.into(),
+            hour_type_name: "Regular".into(),
+            hour_type_badge_class: "pd-type-reg".into(),
+        }
+    }
+
+    #[test]
+    fn empty_entries_returns_empty() {
+        let rows = build_pivot(&[], &["2026-05-21".to_string()]);
+        assert!(rows.is_empty());
+    }
+
+    #[test]
+    fn single_entry_single_day() {
+        let entries = vec![
+            make_entry(1, 1, 1, false, "2026-05-21", Some(8.0), "WBS-A", "Alpha", "REG"),
+        ];
+        let days = vec!["2026-05-21".to_string()];
+        let rows = build_pivot(&entries, &days);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].labor_code_name, "Alpha");
+        assert_eq!(rows[0].cells, vec![Some(8.0)]);
+        assert_eq!(rows[0].total, 8.0);
+    }
+
+    #[test]
+    fn entries_aggregated_by_key() {
+        let entries = vec![
+            make_entry(1, 1, 1, false, "2026-05-21", Some(4.0), "WBS-A", "Alpha", "REG"),
+            make_entry(2, 1, 1, false, "2026-05-21", Some(3.0), "WBS-A", "Alpha", "REG"),
+            make_entry(3, 2, 1, false, "2026-05-21", Some(2.0), "WBS-B", "Beta", "REG"),
+        ];
+        let days = vec!["2026-05-21".to_string()];
+        let rows = build_pivot(&entries, &days);
+        assert_eq!(rows.len(), 2);
+        let alpha = rows.iter().find(|r| r.labor_code_name == "Alpha").unwrap();
+        assert_eq!(alpha.cells[0], Some(7.0));
+        let beta = rows.iter().find(|r| r.labor_code_name == "Beta").unwrap();
+        assert_eq!(beta.cells[0], Some(2.0));
+    }
+
+    #[test]
+    fn in_progress_entries_excluded() {
+        let entries = vec![
+            make_entry(1, 1, 1, false, "2026-05-21", None, "WBS-A", "Alpha", "REG"),
+        ];
+        let days = vec!["2026-05-21".to_string()];
+        let rows = build_pivot(&entries, &days);
+        assert!(rows.is_empty());
+    }
+
+    #[test]
+    fn sort_order_is_wbs_then_ht_code_then_telework() {
+        let entries = vec![
+            make_entry(1, 2, 1, false, "2026-05-21", Some(1.0), "WBS-B", "Beta", "REG"),
+            make_entry(2, 1, 1, false, "2026-05-21", Some(1.0), "WBS-A", "Alpha", "REG"),
+        ];
+        let days = vec!["2026-05-21".to_string()];
+        let rows = build_pivot(&entries, &days);
+        assert_eq!(rows[0].labor_code_name, "Alpha");
+        assert_eq!(rows[1].labor_code_name, "Beta");
+    }
+
+    #[test]
+    fn multiple_days_per_row() {
+        let entries = vec![
+            make_entry(1, 1, 1, false, "2026-05-21", Some(8.0), "WBS-A", "Alpha", "REG"),
+            make_entry(2, 1, 1, false, "2026-05-22", Some(4.0), "WBS-A", "Alpha", "REG"),
+        ];
+        let days = vec!["2026-05-21".to_string(), "2026-05-22".to_string()];
+        let rows = build_pivot(&entries, &days);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].cells, vec![Some(8.0), Some(4.0)]);
+        assert_eq!(rows[0].total, 12.0);
+    }
+
+    #[test]
+    fn telework_splits_rows() {
+        let entries = vec![
+            make_entry(1, 1, 1, false, "2026-05-21", Some(4.0), "WBS-A", "Alpha", "REG"),
+            make_entry(2, 1, 1, true,  "2026-05-21", Some(3.0), "WBS-A", "Alpha", "REG"),
+        ];
+        let days = vec!["2026-05-21".to_string()];
+        let rows = build_pivot(&entries, &days);
+        assert_eq!(rows.len(), 2);
+        let onsite = rows.iter().find(|r| !r.telework).unwrap();
+        assert_eq!(onsite.cells[0], Some(4.0));
+        let remote = rows.iter().find(|r| r.telework).unwrap();
+        assert_eq!(remote.cells[0], Some(3.0));
     }
 }
