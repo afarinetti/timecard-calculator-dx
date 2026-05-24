@@ -56,7 +56,9 @@
 
 /* Stat card value */
 .pd-stat-value,
-.pd-stat-value-ok {
+.pd-stat-value-ok,
+.pd-stat-value-error,
+.pd-stat-value-wip {
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
   font-size: 28px;
   font-weight: 700;
