@@ -66,6 +66,9 @@
 .pd-stat-value-ok {
   color: #3fb950;
 }
+.pd-stat-value-error {
+  color: #f85149;
+}
 
 /* Now button (overlaid on time inputs) */
 .pd-now-btn {

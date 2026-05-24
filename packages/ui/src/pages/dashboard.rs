@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 use api::{PayPeriodAnchor, Repository, TimecardEntryView};
     use crate::{
     components::{entry_form::EntryFormModal, entry_table::EntryTable, pivot_table::PivotTable},
-    utils::{navigate_date, navigate_week, today, week_start_for, date_range, CurrentDateSig, CurrentWeekSig},
+    utils::{navigate_date, navigate_week, today, week_start_for, date_range, overlapping_ids, CurrentDateSig, CurrentWeekSig},
 };
 
 #[derive(Clone, PartialEq)]
@@ -70,15 +70,21 @@ pub fn Dashboard() -> Element {
     };
 
     // Derive stat values before rsx! so borrows drop
-    let today_hrs = day_data.read().as_ref()
-        .and_then(|r| r.as_ref().ok())
-        .map(|s| s.total_hours.max(0.0));
-    let week_hrs = week_data.read().as_ref()
-        .and_then(|r| r.as_ref().ok())
-        .map(|s| s.total_hours.max(0.0));
-    let pp_hrs = pp_data.read().as_ref()
-        .and_then(|opt| opt.as_ref())
-        .map(|(_, summary, _, _)| summary.total_hours.max(0.0));
+    let (today_hrs, today_error) = if let Some(Ok(s)) = day_data.read().as_ref() {
+        (Some(s.total_hours.max(0.0)), !overlapping_ids(&s.entries).is_empty())
+    } else {
+        (None, false)
+    };
+    let (week_hrs, week_error) = if let Some(Ok(s)) = week_data.read().as_ref() {
+        (Some(s.total_hours.max(0.0)), !overlapping_ids(&s.entries).is_empty())
+    } else {
+        (None, false)
+    };
+    let (pp_hrs, pp_error) = if let Some((_, summary, _, _)) = pp_data.read().as_ref().and_then(|opt| opt.as_ref()) {
+        (Some(summary.total_hours.max(0.0)), !overlapping_ids(&summary.entries).is_empty())
+    } else {
+        (None, false)
+    };
 
     let open_add_entry = move |_| {
         *editing_entry.write() = None;
@@ -106,7 +112,7 @@ pub fn Dashboard() -> Element {
                 div { class: "bg-[#161b22] border border-[#21262d] rounded-lg px-4 py-3.5",
                     p { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] mb-1.5", "Today" }
                     if let Some(h) = today_hrs {
-                        p { class: if h > 8.0 { "pd-stat-value-ok" } else { "pd-stat-value" },
+                        p { class: if today_error { "pd-stat-value-error" } else if h > 8.0 { "pd-stat-value-ok" } else { "pd-stat-value" },
                             "{h:.1}"
                             span { class: "text-[13px] text-[#8b949e] font-normal ml-0.5", "h" }
                         }
@@ -118,7 +124,7 @@ pub fn Dashboard() -> Element {
                 div { class: "bg-[#161b22] border border-[#21262d] rounded-lg px-4 py-3.5",
                     p { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] mb-1.5", "This Week" }
                     if let Some(h) = week_hrs {
-                        p { class: if h > 40.0 { "pd-stat-value-ok" } else { "pd-stat-value" },
+                        p { class: if week_error { "pd-stat-value-error" } else if h > 40.0 { "pd-stat-value-ok" } else { "pd-stat-value" },
                             "{h:.1}"
                             span { class: "text-[13px] text-[#8b949e] font-normal ml-0.5", "h" }
                         }
@@ -130,7 +136,7 @@ pub fn Dashboard() -> Element {
                 div { class: "bg-[#161b22] border border-[#21262d] rounded-lg px-4 py-3.5",
                     p { class: "text-[10px] text-[#8b949e] uppercase tracking-[0.07em] mb-1.5", "Pay Period" }
                     if let Some(h) = pp_hrs {
-                        p { class: if h > 80.0 { "pd-stat-value-ok" } else { "pd-stat-value" },
+                        p { class: if pp_error { "pd-stat-value-error" } else if h > 80.0 { "pd-stat-value-ok" } else { "pd-stat-value" },
                             "{h:.1}"
                             span { class: "text-[13px] text-[#8b949e] font-normal ml-0.5", "h" }
                         }
