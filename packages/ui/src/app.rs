@@ -28,6 +28,7 @@ pub fn App() -> Element {
     });
 
     rsx! {
+        document::Title { "Timecard Calculator" }
         document::Stylesheet { href: asset!("/assets/app.css") }
         document::Stylesheet { href: asset!("/assets/precision-dark.css") }
         Router::<Route> {}
