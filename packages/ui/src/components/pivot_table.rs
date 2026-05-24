@@ -7,6 +7,8 @@ use crate::utils::format_day_col;
 // ── Internal data structures ────────────────────────────────────────────────
 
 struct PivotRow {
+    labor_code_id:    i64,
+    hour_type_id:     i64,
     wbs_number:       String,
     labor_code_name:  String,
     hour_type_code:   String,
@@ -56,6 +58,8 @@ fn build_pivot(entries: &[TimecardEntryView], days: &[String]) -> Vec<PivotRow> 
                 .collect();
             let total: f64 = day_cells.iter().filter_map(|c| *c).sum();
             PivotRow {
+                labor_code_id: key.0,
+                hour_type_id:  key.1,
                 wbs_number: wbs,
                 labor_code_name: name,
                 hour_type_code: ht,
@@ -73,13 +77,13 @@ fn build_pivot(entries: &[TimecardEntryView], days: &[String]) -> Vec<PivotRow> 
 ///
 /// Rows are grouped by (labor code, hour type, telework).
 /// Columns are the days in `days` (YYYY-MM-DD). Clicking a cell with hours
-/// fires `on_day_click` with that day's date string so the caller can
-/// navigate to the Day tab.
+/// fires `on_day_click` with `(date, Some(entry))` when exactly one entry
+/// matches, or `(date, None)` when there are zero or multiple matches.
 #[component]
 pub fn PivotTable(
     entries:      Vec<TimecardEntryView>,
     days:         Vec<String>,
-    on_day_click: EventHandler<String>,
+    on_day_click: EventHandler<(String, Option<TimecardEntryView>)>,
 ) -> Element {
     if entries.is_empty() {
         return rsx! {
@@ -142,9 +146,24 @@ pub fn PivotTable(
                 // ── Body ───────────────────────────────────────────────
                 tbody {
                     {rows.iter().enumerate().map(|(row_idx, row)| {
+                        let lc_id  = row.labor_code_id;
+                        let ht_id  = row.hour_type_id;
+                        let tw     = row.telework;
                         let day_cells = visible.iter().map(|&col_idx| {
                             let day = days[col_idx].clone();
                             let hours = row.cells[col_idx];
+                            // Find the single entry matching this cell, if any
+                            let matched: Vec<TimecardEntryView> = entries
+                                .iter()
+                                .filter(|e| {
+                                    e.date == day
+                                        && e.labor_code_id == lc_id
+                                        && e.hour_type_id  == ht_id
+                                        && e.telework      == tw
+                                })
+                                .cloned()
+                                .collect();
+                            let single = if matched.len() == 1 { matched.into_iter().next() } else { None };
                             rsx! {
                                 td { key: "{day}",
                                     class: "px-1 py-[9px] text-center border-b border-[#21262d]",
@@ -153,7 +172,7 @@ pub fn PivotTable(
                                             class: "font-mono text-xs font-bold text-[#e6edf3] \
                                                     hover:text-[#58a6ff] transition-colors cursor-pointer \
                                                     px-1 rounded",
-                                            onclick: move |_| on_day_click.call(day.clone()),
+                                            onclick: move |_| on_day_click.call((day.clone(), single.clone())),
                                             "{h:.1}"
                                         }
                                     } else {
@@ -216,7 +235,7 @@ pub fn PivotTable(
                                             class: "font-mono text-xs font-bold text-[#e6edf3] \
                                                     hover:text-[#58a6ff] transition-colors cursor-pointer \
                                                     px-1 rounded",
-                                            onclick: move |_| on_day_click.call(day.clone()),
+                                            onclick: move |_| on_day_click.call((day.clone(), None)),
                                             "{total:.1}"
                                         }
                                     } else {

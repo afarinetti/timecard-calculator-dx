@@ -257,9 +257,13 @@ pub fn Dashboard() -> Element {
                                 PivotTable {
                                     entries: summary.entries.clone(),
                                     days,
-                                    on_day_click: move |date: String| {
+                                    on_day_click: move |(date, entry): (String, Option<_>)| {
                                         *current_date.write() = date;
                                         *tab.write() = DashTab::Day;
+                                        if let Some(e) = entry {
+                                            *editing_entry.write() = Some(e);
+                                            *show_form.write() = true;
+                                        }
                                     },
                                 }
                                 div { class: "flex justify-end mt-2 text-xs text-[#8b949e]",
@@ -313,9 +317,13 @@ pub fn Dashboard() -> Element {
                                     PivotTable {
                                         entries: summary.entries.clone(),
                                         days: date_range(&period.start_date, &period.end_date),
-                                        on_day_click: move |date: String| {
+                                        on_day_click: move |(date, entry): (String, Option<_>)| {
                                             *current_date.write() = date;
                                             *tab.write() = DashTab::Day;
+                                            if let Some(e) = entry {
+                                                *editing_entry.write() = Some(e);
+                                                *show_form.write() = true;
+                                            }
                                         },
                                     }
                                     div { class: "flex justify-end mt-2 text-xs text-[#8b949e]",
