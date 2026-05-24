@@ -79,7 +79,7 @@ fn round_to_nearest_15(minutes: u32) -> u32 {
 }
 
 fn ceil_to_next_15(minutes: u32) -> u32 {
-    ((minutes + 14) / 15) * 15
+    minutes.div_ceil(15) * 15
 }
 
 pub fn start_now_hhmm() -> String {

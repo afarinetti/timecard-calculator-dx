@@ -12,17 +12,17 @@ pub fn Settings() -> Element {
     let mut error       = use_signal(|| Option::<String>::None);
 
     // --- Labor Codes form state ---
-    let mut lc_wbs      = use_signal(|| String::new());
-    let mut lc_name     = use_signal(|| String::new());
+    let mut lc_wbs      = use_signal(String::new);
+    let mut lc_name     = use_signal(String::new);
     let mut editing_lc  = use_signal(|| Option::<LaborCode>::None);
 
     // --- Hour Types form state ---
-    let mut ht_code     = use_signal(|| String::new());
-    let mut ht_name     = use_signal(|| String::new());
+    let mut ht_code     = use_signal(String::new);
+    let mut ht_name     = use_signal(String::new);
     let mut editing_ht  = use_signal(|| Option::<HourType>::None);
 
     // --- Pay Period Anchor form state ---
-    let mut anchor_date = use_signal(|| String::new());
+    let mut anchor_date = use_signal(String::new);
 
     let mut active_pane = use_signal(|| 0u8); // 0=PayPeriod, 1=LaborCodes, 2=HourTypes, 3=ImportExport
 
@@ -170,9 +170,13 @@ pub fn Settings() -> Element {
                         match serde_json::from_str::<api::ImportPayload>(&text) {
                             Ok(payload) => {
                                 let repo = Repository::new(api::pool());
-                                repo.import_lookup_data(&payload.labor_codes, &payload.hour_types).await;
-                                if let Ok(d) = repo.list_labor_codes().await { *lc_sig.write() = d; }
-                                if let Ok(d) = repo.list_hour_types().await  { *ht_sig.write() = d; }
+                                match repo.import_lookup_data(&payload.labor_codes, &payload.hour_types).await {
+                                    Ok(_) => {
+                                        if let Ok(d) = repo.list_labor_codes().await { *lc_sig.write() = d; }
+                                        if let Ok(d) = repo.list_hour_types().await  { *ht_sig.write() = d; }
+                                    }
+                                    Err(e) => *err.write() = Some(e.to_string()),
+                                }
                             }
                             Err(e) => *err.write() = Some(format!("Invalid JSON: {e}")),
                         }
@@ -190,7 +194,7 @@ pub fn Settings() -> Element {
         spawn(async move {
             let repo = Repository::new(api::pool());
             match repo.export_lookup_data().await {
-                Err(e) => { *err.write() = Some(e.to_string()); return; }
+                Err(e) => { *err.write() = Some(e.to_string());}
                 Ok(payload) => {
                     let json = match serde_json::to_string_pretty(&payload) {
                         Ok(s) => s,
@@ -224,7 +228,7 @@ pub fn Settings() -> Element {
                     button {
                         class: if *active_pane.read() == i { "pd-subnav-active w-full text-left" }
                                else { "pd-subnav-item w-full text-left" },
-                        onclick: move |_| *active_pane.write() = i,
+                        onclick: move |_| { *active_pane.write() = i; *error.write() = None; },
                         "{label}"
                     }
                 }

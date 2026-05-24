@@ -14,18 +14,17 @@ impl<'a> Repository<'a> {
     }
 
     /// Convert local Central "HH:MM" + "YYYY-MM-DD" to UTC ISO 8601.
-    fn central_to_utc(date: &str, time: &str) -> String {
+    fn central_to_utc(date: &str, time: &str) -> Result<String, sqlx::Error> {
         let naive = NaiveDateTime::parse_from_str(
             &format!("{}T{}:00", date, time),
             "%Y-%m-%dT%H:%M:%S",
         )
-        .expect("Invalid date/time string");
-        Chicago
+        .map_err(|e| sqlx::Error::Protocol(format!("Invalid date/time: {}", e)))?;
+        let local = Chicago
             .from_local_datetime(&naive)
             .single()
-            .expect("Ambiguous or invalid Central time")
-            .with_timezone(&chrono::Utc)
-            .to_rfc3339()
+            .ok_or_else(|| sqlx::Error::Protocol("Ambiguous or invalid Central time".into()))?;
+        Ok(local.with_timezone(&chrono::Utc).to_rfc3339())
     }
 
     /// Convert a `TimecardEntryRow` to a `TimecardEntryView` with computed decimal_hours.
@@ -171,8 +170,8 @@ impl<'a> Repository<'a> {
         &self,
         input: &CreateTimecardEntry,
     ) -> Result<TimecardEntryView, sqlx::Error> {
-        let utc_start = Self::central_to_utc(&input.date, &input.start_time);
-        let utc_end = input.end_time.as_deref().map(|t| Self::central_to_utc(&input.date, t));
+        let utc_start = Self::central_to_utc(&input.date, &input.start_time)?;
+        let utc_end = input.end_time.as_deref().map(|t| Self::central_to_utc(&input.date, t)).transpose()?;
         let telework: i64 = input.telework as i64;
 
         let id = sqlx::query!(
@@ -195,8 +194,8 @@ impl<'a> Repository<'a> {
         &self,
         input: &UpdateTimecardEntry,
     ) -> Result<TimecardEntryView, sqlx::Error> {
-        let utc_start = Self::central_to_utc(&input.date, &input.start_time);
-        let utc_end = input.end_time.as_deref().map(|t| Self::central_to_utc(&input.date, t));
+        let utc_start = Self::central_to_utc(&input.date, &input.start_time)?;
+        let utc_end = input.end_time.as_deref().map(|t| Self::central_to_utc(&input.date, t)).transpose()?;
         let telework: i64 = input.telework as i64;
 
         sqlx::query!(
@@ -348,7 +347,7 @@ impl<'a> Repository<'a> {
             let date_str = cur.format("%Y-%m-%d").to_string();
             let total_hours = entries
                 .iter()
-                .filter(|e| e.date.to_string() == date_str)
+                .filter(|e| e.date == cur)
                 .filter_map(|e| e.decimal_hours)
                 .sum();
             result.push(DayAggregate { date: date_str, total_hours });
@@ -379,28 +378,30 @@ impl<'a> Repository<'a> {
         &self,
         labor_codes: &[ImportLaborCode],
         hour_types: &[ImportHourType],
-    ) -> ImportResult {
+    ) -> Result<ImportResult, sqlx::Error> {
+        let mut tx = self.pool.begin().await?;
         let mut lc_count = 0u64;
         for lc in labor_codes {
-            if sqlx::query!(
+            sqlx::query!(
                 "INSERT INTO labor_codes (wbs_number, name) VALUES ($1, $2) ON CONFLICT(wbs_number) DO UPDATE SET name = excluded.name",
                 lc.wbs_number, lc.name,
             )
-            .execute(self.pool)
-            .await
-            .is_ok() { lc_count += 1; }
+            .execute(&mut *tx)
+            .await?;
+            lc_count += 1;
         }
         let mut ht_count = 0u64;
         for ht in hour_types {
-            if sqlx::query!(
+            sqlx::query!(
                 "INSERT INTO hour_types (code, name) VALUES ($1, $2) ON CONFLICT(code) DO UPDATE SET name = excluded.name",
                 ht.code, ht.name,
             )
-            .execute(self.pool)
-            .await
-            .is_ok() { ht_count += 1; }
+            .execute(&mut *tx)
+            .await?;
+            ht_count += 1;
         }
-        ImportResult { imported_labor_codes: lc_count, imported_hour_types: ht_count }
+        tx.commit().await?;
+        Ok(ImportResult { imported_labor_codes: lc_count, imported_hour_types: ht_count })
     }
 
     // --- Export ---
@@ -465,7 +466,7 @@ pub fn compute_decimal_hours(start_time: DateTime<Utc>, end_time: Option<DateTim
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::TimeZone;
+    
 
     fn dt(s: &str) -> DateTime<Utc> {
         DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&Utc)
@@ -780,9 +781,9 @@ mod tests {
     async fn import_upserts_on_conflict(pool: sqlx::SqlitePool) {
         let repo = Repository::new(&pool);
         let payload = vec![ImportLaborCode { wbs_number: "WBS-X".into(), name: "Old".into() }];
-        repo.import_lookup_data(&payload, &[]).await;
+        repo.import_lookup_data(&payload, &[]).await.unwrap();
         let payload2 = vec![ImportLaborCode { wbs_number: "WBS-X".into(), name: "New".into() }];
-        repo.import_lookup_data(&payload2, &[]).await;
+        repo.import_lookup_data(&payload2, &[]).await.unwrap();
         let list = repo.list_labor_codes().await.unwrap();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "New");

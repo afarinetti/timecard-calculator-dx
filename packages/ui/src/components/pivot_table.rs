@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use api::TimecardEntryView;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use chrono::{NaiveDate, Datelike, Weekday};
 use crate::utils::{format_day_col, overlapping_ids};
 
@@ -9,7 +9,6 @@ use crate::utils::{format_day_col, overlapping_ids};
 struct PivotRow {
     labor_code_id:    i64,
     hour_type_id:     i64,
-    wbs_number:       String,
     labor_code_name:  String,
     hour_type_code:   String,
     telework:         bool,
@@ -25,11 +24,12 @@ fn build_pivot(entries: &[TimecardEntryView], days: &[String]) -> Vec<PivotRow> 
     let mut row_order: Vec<RowKey> = Vec::new();
     let mut meta: HashMap<RowKey, (String, String, String)> = HashMap::new(); // → (wbs, name, ht_code)
     let mut cells: HashMap<(RowKey, String), f64> = HashMap::new();
+    let mut seen: HashSet<RowKey> = HashSet::new();
 
     for entry in entries {
         if let Some(h) = entry.decimal_hours {
             let key: RowKey = (entry.labor_code_id, entry.hour_type_id, entry.telework);
-            if !row_order.contains(&key) {
+            if seen.insert(key) {
                 row_order.push(key);
                 meta.insert(key, (
                     entry.wbs_number.clone(),
@@ -51,7 +51,7 @@ fn build_pivot(entries: &[TimecardEntryView], days: &[String]) -> Vec<PivotRow> 
     row_order
         .iter()
         .map(|key| {
-            let (wbs, name, ht) = meta[key].clone();
+            let (_wbs, name, ht) = meta[key].clone();
             let day_cells: Vec<Option<f64>> = days
                 .iter()
                 .map(|d| cells.get(&(*key, d.clone())).copied())
@@ -60,7 +60,6 @@ fn build_pivot(entries: &[TimecardEntryView], days: &[String]) -> Vec<PivotRow> 
             PivotRow {
                 labor_code_id: key.0,
                 hour_type_id:  key.1,
-                wbs_number: wbs,
                 labor_code_name: name,
                 hour_type_code: ht,
                 telework: key.2,

@@ -20,11 +20,11 @@ pub fn EntryFormModal(
     let hour_types  = use_context::<Signal<Vec<HourType>>>();
 
     let mut mode          = use_signal(|| EntryMode::TimeInputs);
-    let mut labor_code_id = use_signal(|| String::new());
-    let mut hour_type_id  = use_signal(|| String::new());
+    let mut labor_code_id = use_signal(String::new);
+    let mut hour_type_id  = use_signal(String::new);
     let mut telework      = use_signal(|| false);
-    let mut start_time    = use_signal(|| String::new());
-    let mut end_time      = use_signal(|| String::new());
+    let mut start_time    = use_signal(String::new);
+    let mut end_time      = use_signal(String::new);
     let mut duration      = use_signal(|| 8.0f64);
     let mut error         = use_signal(|| Option::<String>::None);
 
@@ -101,8 +101,8 @@ pub fn EntryFormModal(
         let date_val    = date_for_submit.clone();
         let tw          = *telework.read();
         let mut err     = error;
-        let on_saved    = on_saved.clone();
-        let on_close    = on_close.clone();
+        let on_saved    = on_saved;
+        let on_close    = on_close;
 
         spawn(async move {
             let pool = api::pool();
